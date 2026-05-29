@@ -103,7 +103,8 @@ bash scripts/package-skill.sh
 ## Current Risk Areas
 
 - WeasyPrint rendering is sensitive to font availability, solid hex tag backgrounds, page breaks, CJK fallback, and synthetic bold. Verify visually for template changes.
-- Slide output has two paths: `slides-weasy*.html` for default PDF decks and `slides*.py` for editable PPTX fallback.
+- Slide output has three paths: `slides-weasy*.html` for default PDF decks, `slides*.py` for editable PPTX fallback, and `assets/templates/marp/slides-marp*.{md,css}` for Markdown-first Marp decks.
+- Marp theme CSS (`assets/templates/marp/slides-marp.css` and `-en`) inlines a full copy of the design tokens (`--parchment`, `--brand`, `--serif`, rhythm modules) because Marp themes must be self-contained. `build.py --sync` / `--check` only scan `.html` templates and `*.py` slide scripts, not the `marp/` directory, so token changes in `references/design.md` / `tokens.json` must be hand-synced into the Marp themes or the decks silently drift.
 - AI/public visibility spans `index*.html`, `llms.txt`, `robots.txt`, `sitemap.xml`, FAQ JSON-LD, README install text, diagram counts, and release archive links.
 - `scripts/shared.py` centralizes constants used by build and stabilization scripts; keep paths and target names in sync before adding templates or diagrams.
 - `dist/kami.zip` is a tracked release archive. Packaging changes must update and inspect it deliberately.
