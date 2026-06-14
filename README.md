@@ -12,7 +12,7 @@
 
 Kami (紙, かみ) means paper in Japanese: the surface where a finished idea lands. AI can produce documents better than most humans do manually. The missing piece is not capability but constraint: without a design system, every session drifts into generic gray and inconsistent layouts.
 
-Kami fills that gap: one constraint language, nine templates, simple enough for agents to run reliably, strict enough that every output is something you actually want to ship. English and Chinese are first-class; Japanese and Korean work via best-effort CJK paths with visual QA before delivery.
+Kami fills that gap: one constraint language, nine templates, simple enough for agents to run reliably, strict enough that every output is something you actually want to ship.
 
 Part of a trilogy: [Kaku](https://github.com/tw93/Kaku) (書く) writes code, [Waza](https://github.com/tw93/Waza) (技) drills habits, [Kami](https://github.com/tw93/Kami) (紙) delivers documents.
 
@@ -156,7 +156,7 @@ Nine template types: One-Pager, Long Doc, Letter, Portfolio, Resume, Slides, Equ
 | Shadows | Ring or whisper only, no hard drop shadows |
 | Tags | Solid hex backgrounds only. `rgba()` triggers a WeasyPrint double-rectangle bug |
 
-**Fonts**: Each language uses a single serif font for the entire page. Chinese: TsangerJinKai02. Japanese: YuMincho. Korean: Source Han Serif K. English: Charter. TsangerJinKai is free for personal use, commercial use requires a license from [tsanger.cn](https://tsanger.cn). Source Han Serif K is OFL-licensed. All other fonts are system-bundled.
+**Fonts**: Each language uses a single serif font for the entire page. Chinese: TsangerJinKai02. Japanese: YuMincho. Korean: Source Han Serif K. English: Charter. See [License](#license) for font terms.
 
 Full spec: [design.md](references/design.md). Cheatsheet: [CHEATSHEET.md](CHEATSHEET.md).
 
