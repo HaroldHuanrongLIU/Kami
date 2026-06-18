@@ -993,7 +993,7 @@ Marp-specific syntax to know:
 | Per-slide pagination off | `<!-- _paginate: false -->` (use it on the cover and the closing slide) |
 | Per-slide footer override | `<!-- _footer: "..." -->` |
 | Global header / footer / pagination | Set in the deck's YAML front-matter (`paginate: true`, `footer: "Project"`) |
-| Background image | `![bg](path.jpg)` |
+| Background image | `![bg]\(path.jpg\)` |
 
 Constraints that bite if you arrive from the WeasyPrint slides:
 
