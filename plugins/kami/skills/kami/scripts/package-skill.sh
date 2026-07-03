@@ -18,6 +18,7 @@ PACKAGE_REQUIRED_ENTRIES=(
   "references/design.md"
   "scripts/build.py"
   "scripts/ensure-fonts.sh"
+  "scripts/site_facts.py"
 )
 
 mkdir -p "$(dirname "$OUT")"
@@ -41,7 +42,7 @@ awk '
   /^assets\/fonts\/JetBrainsMono\.woff2$/ { print; next }
   /^assets\/fonts\/LICENSE-SourceHanSerifK\.txt$/ { print; next }
   /^references\// { print; next }
-  /^scripts\/(build|check-update|checks|ensure-fonts|highlight|lint|mermaid_normalize|optional_deps|shared|tokens|verify)\.(py|sh)$/ { print; next }
+  /^scripts\/(build|check-update|checks|ensure-fonts|highlight|lint|mermaid_normalize|optional_deps|shared|site_facts|tokens|verify)\.(py|sh)$/ { print; next }
 ' "$MANIFEST" > "$FILTERED_MANIFEST"
 
 zip -X -q "$OUT" -@ < "$FILTERED_MANIFEST"

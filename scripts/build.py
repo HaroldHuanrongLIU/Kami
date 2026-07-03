@@ -4,6 +4,7 @@
 Thin CLI shell. Implementation lives in:
   - lint.py    (scan_file, check_all, check_cross_template_consistency)
   - tokens.py  (sync_check)
+  - site_facts.py (check_site_facts)
   - verify.py  (verify_target, verify_all, show_fonts, font checks)
   - checks.py  (check_placeholders, check_orphans, check_density, check_resume_balance, check_rhythm)
 
@@ -11,7 +12,7 @@ Usage:
     python3 scripts/build.py                      # build all examples (HTML + diagrams + PPTX)
     python3 scripts/build.py resume               # build one template, print pages + fonts
     python3 scripts/build.py landing-page         # check one browser-only static template
-    python3 scripts/build.py --check              # scan templates for CSS rule violations
+    python3 scripts/build.py --check              # lint + token/theme + public-site fact checks
     python3 scripts/build.py --check -v           # verbose (show each scanned file)
     python3 scripts/build.py --sync               # check CSS token drift across templates
     python3 scripts/build.py --verify             # build all + page count + font checks
@@ -73,6 +74,7 @@ from lint import (  # noqa: F401  re-exported for test_build.py
     check_off_palette,
     scan_file,
 )
+from site_facts import check_site_facts
 from tokens import sync_check
 from verify import (
     show_fonts,
@@ -318,6 +320,21 @@ def _verify_all(target: str | None) -> int:
 
 # ------------------------- entry -------------------------
 
+def _unexpected_arg(args: list[str], allowed: set[str] | None = None) -> str | None:
+    for arg in args:
+        if allowed is not None:
+            if arg not in allowed:
+                return arg
+        elif arg.startswith("-"):
+            return arg
+    return None
+
+
+def _error_unexpected(arg: str) -> int:
+    print(f"ERROR: unexpected argument: {arg}")
+    return 2
+
+
 def main(argv: list[str]) -> int:
     args = argv[1:]
     if not args:
@@ -326,29 +343,60 @@ def main(argv: list[str]) -> int:
         print(__doc__)
         return 0
     if args[0] == "--check":
+        unexpected = _unexpected_arg(args[1:], {"-v", "--verbose"})
+        if unexpected:
+            return _error_unexpected(unexpected)
         verbose = "-v" in args[1:] or "--verbose" in args[1:]
         css_result = check_all(verbose)
         sync_result = sync_check(verbose)
         cross_result = check_cross_template_consistency(verbose)
         palette_result = check_off_palette(verbose)
-        return max(css_result, sync_result, cross_result, palette_result)
+        site_result = check_site_facts(verbose)
+        return max(css_result, sync_result, cross_result, palette_result, site_result)
     if args[0] == "--sync":
+        unexpected = _unexpected_arg(args[1:], {"-v", "--verbose"})
+        if unexpected:
+            return _error_unexpected(unexpected)
         verbose = "-v" in args[1:] or "--verbose" in args[1:]
         return sync_check(verbose)
     if args[0] == "--verify":
-        target = args[1] if len(args) > 1 and not args[1].startswith("-") else None
+        if len(args) > 2:
+            return _error_unexpected(args[2])
+        if len(args) == 2 and args[1].startswith("-"):
+            return _error_unexpected(args[1])
+        target = args[1] if len(args) > 1 else None
         return _verify_all(target)
     if args[0] == "--check-orphans":
+        unexpected = _unexpected_arg(args[1:])
+        if unexpected:
+            return _error_unexpected(unexpected)
         return check_orphans(args[1:])
     if args[0] == "--check-density":
+        unexpected = _unexpected_arg(args[1:])
+        if unexpected:
+            return _error_unexpected(unexpected)
         return check_density(args[1:])
     if args[0] == "--check-resume-balance":
+        unexpected = _unexpected_arg(args[1:])
+        if unexpected:
+            return _error_unexpected(unexpected)
         return check_resume_balance(args[1:])
     if args[0] == "--check-placeholders":
+        unexpected = _unexpected_arg(args[1:])
+        if unexpected:
+            return _error_unexpected(unexpected)
         return check_placeholders(args[1:])
     if args[0] == "--check-rhythm":
+        unexpected = _unexpected_arg(args[1:])
+        if unexpected:
+            return _error_unexpected(unexpected)
         slide_targets = [a for a in args[1:] if not a.startswith("-")]
         return check_rhythm(slide_targets, PPTX_TARGETS, TEMPLATES)
+    if args[0].startswith("-"):
+        print(f"ERROR: unknown option: {args[0]}")
+        return 2
+    if len(args) > 1:
+        return _error_unexpected(args[1])
     return build_single(args[0])
 
 

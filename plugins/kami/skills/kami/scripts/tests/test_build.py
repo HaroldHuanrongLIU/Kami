@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import builtins
 import importlib.util
+import inspect
 import io
 import json
 import os
@@ -43,6 +44,7 @@ from build import (  # noqa: E402
     check_cross_template_consistency,
     check_off_palette,
     check_placeholders,
+    main as build_main,
     scan_file,
 )
 from shared import (  # noqa: E402
@@ -58,6 +60,13 @@ from shared import (  # noqa: E402
 )
 import highlight as highlight_mod  # noqa: E402
 from highlight import highlight_code_blocks  # noqa: E402
+from site_facts import (  # noqa: E402
+    FULL_PUBLIC_FACT_FILES,
+    REDIRECT_SITE_FILE,
+    check_site_facts,
+    site_fact_issues,
+)
+from tokens import _mermaid_theme_drift  # noqa: E402
 from verify import RECOGNIZABLE_FALLBACK_FONT_MARKERS  # noqa: E402
 
 
@@ -89,6 +98,21 @@ def silently(callable_, *args, **kwargs):
     sink = io.StringIO()
     with contextlib.redirect_stdout(sink):
         return callable_(*args, **kwargs)
+
+
+def run_build_args(args: list[str]) -> tuple[int, str]:
+    sink = io.StringIO()
+    with contextlib.redirect_stdout(sink):
+        rc = build_main(["build.py", *args])
+    return rc, sink.getvalue()
+
+
+def site_fact_file_map() -> dict[str, str]:
+    rels = (*FULL_PUBLIC_FACT_FILES, REDIRECT_SITE_FILE)
+    return {
+        rel: (REPO_ROOT / rel).read_text(encoding="utf-8", errors="replace")
+        for rel in rels
+    }
 
 
 # --------------------------- package archive ---------------------------
@@ -146,6 +170,7 @@ PACKAGE_REQUIRED_ENTRIES = {
     "references/design.md",
     "scripts/build.py",
     "scripts/ensure-fonts.sh",
+    "scripts/site_facts.py",
 }
 
 
@@ -214,6 +239,21 @@ def test_claude_plugin_marketplace_version_matches_version_file() -> None:
           f"marketplace={kami_plugin.get('version')!r}, VERSION={version!r}")
 
 
+def test_build_metadata_reads_tokens_from_root_argument() -> None:
+    from build_metadata import build_codex_plugin, read_token_value
+
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "references").mkdir()
+        (root / "references" / "tokens.json").write_text('{"--brand":"#123456"}\n', encoding="utf-8")
+
+        brand_color = read_token_value(root, "brand")
+        plugin = build_codex_plugin("9.9.9", brand_color)
+        check("build_metadata reads brand token from provided root",
+              plugin["interface"]["brandColor"] == "#123456",
+              f"brandColor={plugin['interface']['brandColor']}")
+
+
 # --------------------------- shared registry ---------------------------
 
 def test_registry_consistency() -> None:
@@ -234,6 +274,50 @@ def test_registry_consistency() -> None:
     check("PPTX_TARGETS has 2 entries", len(PPTX_TARGETS) == 2,
           f"got {len(PPTX_TARGETS)}")
     check("PARCHMENT_RGB is canonical", PARCHMENT_RGB == (0xF5, 0xF4, 0xED))
+
+
+def test_runner_auto_discovers_tests() -> None:
+    names = [name for name, _ in _test_functions()]
+    check("test runner auto-discovers Codex update command test",
+          "test_check_update_uses_codex_plugin_update_command" in names)
+    check("test runner auto-discovers this test",
+          "test_runner_auto_discovers_tests" in names)
+
+
+def test_build_cli_rejects_unexpected_flags() -> None:
+    rc, out = run_build_args(["resume", "--verify"])
+    check("build.py rejects flags after target",
+          rc == 2 and "ERROR: unexpected argument: --verify" in out,
+          out.strip())
+
+    rc, out = run_build_args(["--check-density", "-v"])
+    check("build.py rejects unknown flags for path-based checks",
+          rc == 2 and "ERROR: unexpected argument: -v" in out,
+          out.strip())
+
+    rc, out = run_build_args(["--verify", "-v"])
+    check("build.py rejects unknown --verify flags",
+          rc == 2 and "ERROR: unexpected argument: -v" in out,
+          out.strip())
+
+
+def test_site_facts_repo_clean() -> None:
+    rc = silently(check_site_facts, False)
+    check("public site facts match shared constants and registries", rc == 0,
+          f"check_site_facts returned {rc}")
+
+
+def test_site_facts_flags_bad_diagram_count() -> None:
+    files = site_fact_file_map()
+    bad = files["index.html"]
+    bad = bad.replace("18 inline SVG diagram types", "17 inline SVG diagram types")
+    bad = bad.replace("Eighteen inline SVG diagram types", "Seventeen inline SVG diagram types")
+    files["index.html"] = bad
+
+    issues = site_fact_issues(files)
+    check("public site facts flag stale diagram counts",
+          any("index.html: missing diagram count 18" in issue for issue in issues),
+          f"issues: {issues}")
 
 
 def test_chinese_html_templates_keep_single_serif_stack() -> None:
@@ -888,6 +972,37 @@ def test_marp_themes_token_synced() -> None:
           "; ".join(drift) if drift else f"checked {checked}, no :root block found")
 
 
+def test_mermaid_theme_matches_tokens() -> None:
+    from shared import TOKENS_FILE
+    canonical = json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
+    issues = _mermaid_theme_drift(canonical)
+    check("mermaid theme colors and role docs match tokens.json",
+          issues == [],
+          f"issues: {issues}")
+
+
+def test_mermaid_theme_drift_flags_token_mismatch() -> None:
+    from shared import TOKENS_FILE
+    canonical = json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
+    canonical["--brand"] = "#000000"
+    issues = _mermaid_theme_drift(canonical)
+    check("mermaid theme drift flags accent token mismatch",
+          any("accent" in issue and "--brand" in issue for issue in issues),
+          f"issues: {issues}")
+
+
+def test_mermaid_normalize_defaults_match_theme() -> None:
+    import mermaid_normalize as mermaid_mod
+    theme = json.loads((REPO_ROOT / "references" / "mermaid-theme.json").read_text(encoding="utf-8"))
+    expected_colors = {f"--{key}": value for key, value in theme["colors"].items()}
+    check("mermaid normalizer fallback colors mirror mermaid-theme.json",
+          mermaid_mod._DEFAULT_COLORS == expected_colors,
+          f"default={mermaid_mod._DEFAULT_COLORS}, theme={expected_colors}")
+    check("mermaid normalizer fallback font mirrors mermaid-theme.json",
+          mermaid_mod._DEFAULT_FONT_STACK == theme["cssFontStack"],
+          f"default={mermaid_mod._DEFAULT_FONT_STACK}, theme={theme['cssFontStack']}")
+
+
 # --------------------------- mermaid normalize ---------------------------
 
 def test_mermaid_color_mix_srgb_single_pct() -> None:
@@ -1035,53 +1150,28 @@ def test_mermaid_normalize_cli_reports_missing_input() -> None:
               combined.strip())
 
 
+def _test_functions():
+    tests = []
+    for name, func in globals().items():
+        if not name.startswith("test_") or not callable(func):
+            continue
+        if getattr(func, "__module__", None) != __name__:
+            continue
+        code = getattr(func, "__code__", None)
+        if code is None:
+            continue
+        tests.append((code.co_firstlineno, name, func))
+    return [(name, func) for _, name, func in sorted(tests)]
+
+
 def main() -> int:
-    test_dist_package_contents()
-    test_codex_plugin_metadata_generated()
-    test_claude_plugin_marketplace_version_matches_version_file()
-    test_registry_consistency()
-    test_chinese_html_templates_keep_single_serif_stack()
-    test_korean_templates_carry_resolvable_serif_name()
-    test_font_fallback_markers_recognize_pt_serif()
-    test_chinese_slides_mono_has_cjk_fallback()
-    test_scan_file_skip_bug()
-    test_scan_file_arrow_in_en()
-    test_scan_file_clean_template()
-    test_scan_file_line_height_too_loose()
-    test_scan_file_cool_gray()
-    test_off_palette_flags_non_token_hex()
-    test_off_palette_ignores_root_and_svg()
-    test_off_palette_repo_clean()
-    test_lint_repo_clean()
-    test_check_update_script()
-    test_scan_file_ignores_block_comment_rgba()
-    test_scan_file_thin_border_with_radius()
-    test_parse_slide_sequence_empty()
-    test_parse_slide_sequence_basic()
-    test_check_placeholders_flags_unfilled()
-    test_check_placeholders_passes_clean()
-    test_pair_names_includes_known_pairs()
-    test_pair_names_includes_ko_variants_when_present()
-    test_cross_template_consistency_clean()
-    test_marp_themes_token_synced()
-    test_extract_root_vars_picks_up_definitions()
-    test_last_content_y_dense_page()
-    test_last_content_y_sparse_page()
-    test_last_content_y_blank_page()
-    test_density_threshold_buckets()
-    test_resume_balance_issues()
-    test_highlight_with_language()
-    test_highlight_without_language()
-    test_highlight_without_pygments_dependency()
-    test_mermaid_color_mix_srgb_single_pct()
-    test_mermaid_color_mix_both_pct()
-    test_mermaid_normalize_strips_unsafe_features()
-    test_mermaid_lint_flags_unnormalized_svg()
-    test_mermaid_diagram_templates_normalized()
-    test_mermaid_diagrams_match_their_mmd_sources()
-    test_mermaid_normalize_rejects_non_beautiful_mermaid()
-    test_mermaid_normalize_cli_accepts_output_before_input()
-    test_mermaid_normalize_cli_reports_missing_input()
+    for name, func in _test_functions():
+        signature = inspect.signature(func)
+        if signature.parameters:
+            params = ", ".join(signature.parameters)
+            check(f"{name} has no parameters", False, f"parameters: {params}")
+            continue
+        func()
     print()
     print(f"Passed: {_PASS} | Failed: {_FAIL}")
     return 0 if _FAIL == 0 else 1

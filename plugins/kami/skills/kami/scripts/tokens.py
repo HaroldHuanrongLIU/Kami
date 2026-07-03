@@ -30,6 +30,46 @@ PY_TOKEN_MAP = {
     "OLIVE": "--olive",
     "STONE": "--stone",
 }
+MERMAID_THEME_FILE = ROOT / "references" / "mermaid-theme.json"
+MERMAID_THEME_TOKEN_MAP = {
+    "bg": "--parchment",
+    "fg": "--near-black",
+    "line": "--olive",
+    "accent": "--brand",
+    "muted": "--stone",
+    "surface": "--ivory",
+    "border": "--border",
+}
+
+
+def _mermaid_theme_drift(canonical: dict[str, str]) -> list[str]:
+    if not MERMAID_THEME_FILE.exists():
+        return [f"mermaid-theme.json not found at {MERMAID_THEME_FILE.relative_to(ROOT)}"]
+
+    try:
+        theme = json.loads(MERMAID_THEME_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [f"mermaid-theme.json is malformed: {exc}"]
+
+    colors = theme.get("colors", {})
+    roles = theme.get("roles", {})
+    drift: list[str] = []
+    for role, token in MERMAID_THEME_TOKEN_MAP.items():
+        expected = canonical.get(token)
+        actual = colors.get(role)
+        if expected is None:
+            drift.append(f"{role}: canonical token {token} missing")
+            continue
+        if actual is None:
+            drift.append(f"{role}: color missing, expected {expected} from {token}")
+        elif actual.lower() != expected.lower():
+            drift.append(f"{role}: expected {expected} from {token}, got {actual}")
+
+        role_doc = str(roles.get(role, ""))
+        if token not in role_doc:
+            drift.append(f"{role}: role doc should mention {token}")
+
+    return drift
 
 
 def sync_check(verbose: bool = False) -> int:
@@ -89,13 +129,20 @@ def sync_check(verbose: bool = False) -> int:
             if actual.lower() != expected.lower():
                 drift.append((str(rel), token, expected, actual))
 
-    if not drift:
+    theme_drift = _mermaid_theme_drift(canonical)
+
+    if not drift and not theme_drift:
         scanned = len(targets) + len(py_targets)
-        print(f"OK: tokens in sync across {scanned} template(s)")
+        print(f"OK: tokens in sync across {scanned} template(s) and mermaid-theme.json")
         return 0
 
-    print(f"\n[token-drift] {len(drift)}")
-    for file, token, expected, actual in drift:
-        print(f"  {file}: {token} expected {expected}, got {actual}")
+    if drift:
+        print(f"\n[token-drift] {len(drift)}")
+        for file, token, expected, actual in drift:
+            print(f"  {file}: {token} expected {expected}, got {actual}")
+    if theme_drift:
+        print(f"\n[mermaid-theme-drift] {len(theme_drift)}")
+        for issue in theme_drift:
+            print(f"  {issue}")
 
     return 1

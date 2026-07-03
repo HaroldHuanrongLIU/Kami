@@ -10,6 +10,8 @@ import html as html_mod
 import re
 import sys
 
+from shared import token_value
+
 CODE_BLOCK_RE = re.compile(
     r'(<pre[^>]*>\s*<code\s+class="language-([\w+-]+)"[^>]*>)'
     r'(.*?)'
@@ -18,11 +20,11 @@ CODE_BLOCK_RE = re.compile(
 )
 
 KAMI_PALETTE = {
-    "brand":      "#1B365D",
-    "stone":      "#6b6a64",
-    "olive":      "#504e49",
-    "dark_warm":  "#3d3d3a",
-    "near_black": "#141413",
+    "brand":      token_value("brand"),
+    "stone":      token_value("stone"),
+    "olive":      token_value("olive"),
+    "dark_warm":  token_value("dark-warm"),
+    "near_black": token_value("near-black"),
 }
 
 _WARNED_MISSING_PYGMENTS = False

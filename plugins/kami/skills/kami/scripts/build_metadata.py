@@ -93,11 +93,26 @@ def read_version(root: Path) -> str:
     return version
 
 
+def read_token_value(root: Path, name: str) -> str:
+    key = name if name.startswith("--") else f"--{name}"
+    token_file = root / "references" / "tokens.json"
+    try:
+        tokens = json.loads(token_file.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise SystemExit(f"ERROR: missing token file at {token_file}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"ERROR: tokens.json is malformed: {exc}") from exc
+    try:
+        return tokens[key]
+    except KeyError as exc:
+        raise SystemExit(f"ERROR: missing token {key} in {token_file}") from exc
+
+
 def render_json(data: dict) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
 
 
-def build_codex_plugin(version: str) -> dict:
+def build_codex_plugin(version: str, brand_color: str) -> dict:
     return {
         "name": PLUGIN_NAME,
         "version": version,
@@ -137,7 +152,7 @@ def build_codex_plugin(version: str) -> dict:
                 "Build a resume using Kami",
                 "Turn this outline into a slide deck",
             ],
-            "brandColor": "#1B365D",
+            "brandColor": brand_color,
         },
     }
 
@@ -314,7 +329,7 @@ def main() -> int:
     root = args.root.resolve()
 
     version = read_version(root)
-    codex_plugin_rendered = render_json(build_codex_plugin(version))
+    codex_plugin_rendered = render_json(build_codex_plugin(version, read_token_value(root, "brand")))
     codex_marketplace_rendered = render_json(build_codex_marketplace())
     codex_plugin_tree = collect_codex_plugin_tree(root, codex_plugin_rendered)
     generated_json_files = [

@@ -24,6 +24,19 @@ EXAMPLES = ROOT / "assets" / "examples"
 TOKENS_FILE = ROOT / "references" / "tokens.json"
 CHECKS_THRESHOLDS_FILE = ROOT / "references" / "checks_thresholds.json"
 
+PUBLIC_REPO = "tw93/kami"
+CLAUDE_CODE_MIN_VERSION = "2.1.142"
+CLAUDE_CODE_INSTALL_COMMANDS = (
+    f"/plugin marketplace add {PUBLIC_REPO}",
+    "/plugin install kami@kami",
+)
+CODEX_PLUGIN_INSTALL_COMMANDS = (
+    f"codex plugin marketplace add {PUBLIC_REPO}",
+    "codex plugin add kami@kami",
+)
+GENERIC_AGENT_INSTALL_COMMAND = f"npx skills add {PUBLIC_REPO}/plugins/kami/skills/kami -a '*' -g -y"
+CLAUDE_DESKTOP_PACKAGE_URL = "https://github.com/tw93/kami/releases/latest/download/kami.zip"
+
 # Canonical parchment background color, kept here so build/density
 # checks share one source of truth instead of redefining the RGB triple.
 PARCHMENT_HEX = "#f5f4ed"
@@ -153,6 +166,51 @@ DIAGRAM_TEMPLATES: dict[str, str] = {
     "diagram-class":         "class.html",
     "diagram-er":            "er.html",
 }
+
+
+PUBLIC_DOCUMENT_TEMPLATE_KINDS = {
+    "one-pager",
+    "letter",
+    "long-doc",
+    "portfolio",
+    "resume",
+    "slides",
+    "equity-report",
+    "changelog",
+}
+
+
+def _public_template_kind(name: str) -> str:
+    for suffix in ("-en", "-ko"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    if name.startswith("slides-weasy"):
+        return "slides"
+    return name
+
+
+def public_document_template_kinds() -> set[str]:
+    """Return public document-template kinds represented by HTML_TEMPLATES."""
+    return {
+        _public_template_kind(name)
+        for name in HTML_TEMPLATES
+        if _public_template_kind(name) in PUBLIC_DOCUMENT_TEMPLATE_KINDS
+    }
+
+
+def public_document_template_count() -> int:
+    return len(public_document_template_kinds())
+
+
+@functools.lru_cache(maxsize=1)
+def load_tokens() -> dict[str, str]:
+    return json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
+
+
+def token_value(name: str) -> str:
+    key = name if name.startswith("--") else f"--{name}"
+    return load_tokens()[key]
 
 
 def build_targets() -> dict[str, tuple[str, int]]:
