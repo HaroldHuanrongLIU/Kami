@@ -1,8 +1,8 @@
 # Diagrams
 
-kami's drawing capability. **17 diagram types** covering structural, process, data chart, and interaction scenarios. All wear kami's skin (parchment + ink-blue + warm grays). No second design system.
+kami's drawing capability. **18 diagram types** covering structural, process, data chart, and interaction scenarios. All wear kami's skin (parchment + ink-blue + warm grays). No second design system.
 
-Every diagram is a **self-contained HTML + inline SVG**: no JS and no build step to use one. Fourteen are hand-drawn; `sequence`, `class`, and `er` are authored from Mermaid text and re-themed to the Kami palette by `scripts/mermaid_normalize.py` (see `references/mermaid.md`). Browse them as standalone pages, or copy the `<svg>...</svg>` block into a long-doc `<figure>` to embed.
+Every diagram is a **self-contained HTML + inline SVG**: no JS and no build step to use one. Fifteen are hand-drawn; `sequence`, `class`, and `er` are authored from Mermaid text and re-themed to the Kami palette by `scripts/mermaid_normalize.py` (see `references/mermaid.md`). Browse them as standalone pages, or copy the `<svg>...</svg>` block into a long-doc `<figure>` to embed.
 
 ---
 
@@ -11,6 +11,7 @@ Every diagram is a **self-contained HTML + inline SVG**: no JS and no build step
 | Showing… | Use | Template |
 |---|---|---|
 | System components + connections | **Architecture** | `assets/diagrams/architecture.html` |
+| Full-system panorama: five layers, control plane, roadmap, owners | **Architecture Board** | `assets/diagrams/architecture-board.html` |
 | Decision branches, "if A then B else C" | **Flowchart** | `assets/diagrams/flowchart.html` |
 | Two-axis positioning / prioritization | **Quadrant** | `assets/diagrams/quadrant.html` |
 | Category comparison (revenue, market share, quarterly) | **Bar Chart** | `assets/diagrams/bar-chart.html` |
@@ -28,6 +29,8 @@ Every diagram is a **self-contained HTML + inline SVG**: no JS and no build step
 Not on the list:
 - **Compare two things**: use a table. A three-column table beats any diagram of a binary contrast.
 - **One box with a label**: delete the box, write the sentence.
+
+Scale check: the **Architecture** row above is a single embeddable figure and follows the 9-node budget below. A full-system panorama (platform map, control plane, roadmap, owner map) is a different artifact: an **architecture board**, covered in section 3. Do not inflate one figure to carry it.
 
 ### The question before drawing
 
@@ -48,9 +51,160 @@ If "no", don't draw. Diagrams add signal to hierarchy, direction, and magnitude.
 
 **Focal rule**: 1-2 focal elements per diagram (`#1B365D` stroke + `#EEF2F7` fill). Everything else goes neutral. Focal signal comes from contrast, not count.
 
+These budgets govern single embeddable figures. A report-scale architecture board carries more blocks under its own budget (section 3).
+
 ---
 
-## 3. Embedding in long-doc / portfolio
+## 3. Architecture boards (report scale)
+
+The **Architecture** template in section 1 is one embeddable figure: at most 9 nodes, one focal, dropped into a `<figure>`. Some asks are bigger: a whole-platform panorama, a control-plane map, a target architecture with roadmap and owners. That artifact is an **architecture board**: a standalone HTML page with inline SVG, same tokens, more structure. Never answer it by inflating a single figure past its node budget.
+
+Start from `assets/diagrams/architecture-board.html`. It ships with a real five-layer demo (a terminal emulator fork), an authoring outline in the HTML comment, and a poster-size `@page` so WeasyPrint exports the whole board on one sheet. Replace the demo content; keep the skeleton.
+
+A board is a reading instrument, not an illustration. The reader must get three things, in order: what the parts are, how they flow or depend, and where the next piece of work should intervene. Any element that does not help one of those judgments gets deleted. The denser the system, the more restrained the board.
+
+### Canvas follows reading path
+
+Decide how much the board must carry before deciding the canvas:
+
+| Board carries | Canvas |
+|---|---|
+| One-screen product or system relationship | 16:9, slide-sized |
+| Whole-platform panorama | Wide canvas, light vertical scroll |
+| Roadmap + owners + governance loop | Report page (the board as the spine of an A4 flow) |
+
+The canvas may grow taller, but never into an endless page. One scan should build the whole picture.
+
+### Five fixed information layers
+
+Complex boards keep a fixed five-layer skeleton instead of free-form scatter. Each layer answers exactly one question:
+
+1. **Title**: one sentence stating the subject and the judgment.
+2. **Business**: roles, capability domains, external consumers.
+3. **System**: platform modules and the control plane.
+4. **Runtime**: key paths: data flow, event flow, permission flow.
+5. **Governance**: monitoring, audit, lifecycle, roadmap, owners.
+
+Do not explain protocol detail in the business layer; do not dump the domain catalog into governance.
+
+### Bands over cards
+
+The fastest way a board turns crude is drawing every fact as its own small card.
+
+- Parallel peers share **one band** with thin vertical dividers, not N cards.
+- Tabular facts get a **table shell**, not five boxes.
+- Focal fill (`--brand-tint`) marks only the genuinely core nodes; the 1-2 focal rule from section 2 still holds.
+- Never nest a card inside a card.
+- Budget: **10-25 major blocks** per board. Past that, merge blocks into domains; do not keep stacking nodes.
+
+### Node anatomy
+
+A node holds three things: optional icon, title, then two or three short lines. No paragraphs, no noun trains.
+
+Good:
+
+```text
+Foundation: event push
+PublishEvent v2, EventBus, webhook subscription
+```
+
+Bad: the same title followed by eight comma-separated technical nouns on one line.
+
+### Copy reads as judgment, not summary
+
+Generated boards fail on copy before they fail on layout: text that is correct but decides nothing. Avoid saturated abstractions, long parallel noun phrases, and adjectives with no action attached. Prefer sentence shapes that commit:
+
+- from X to Y
+- inserted before X
+- unifies X across Y
+- owned by X
+- measured by X
+
+Board text is short, hard, and executable. `writing.md` still applies.
+
+### Line discipline
+
+- Orthogonal lines only. No curves, no passing through modules, no crossing text, no decorative junctions.
+- Main path in `--brand`, auxiliary lines in border tone, light open chevron heads (arrow rules in section 4; manual chevrons for PDF output, see production.md).
+- **Connector standoff: 4px.** On a board, start the shaft 4px after the source edge and land the chevron tip 4px before the target edge. Both offsets are computed from the node edge (keep them divisible by 4), so this is a deliberate standoff, not the sloppy floating gap the embedding rules warn about. Welded-on arrows read cramped at board scale.
+- **Never run a line along a module's top edge.** It reads as a broken border or a squashed module, worst when a brand-colored line crosses a light card. Route the line below or beside the module with 16-24px of air, and attach it with a short stub to the outer edge, never into the text area.
+- A relation that is not core information becomes a caption or a small label, not a line.
+- A line the reader cannot parse gets deleted, not explained.
+
+### English anchors on CN boards
+
+Uppercase mono anchors (`MAIN AXIS`, `CONTROL PLANE`, `PUBLIC INFRA`, `OWNER MAP`, `ROADMAP`) help scanning on a Chinese board. Do not translate full sentences: the reader should never switch languages mid-thought.
+
+### No viewpoint captions
+
+Notes like "from the platform team's perspective" or "working draft for X" do not belong on the board; structure carries the viewpoint. Corner text holds only the date basis, version, or data scope. If deleting a caption changes nothing, delete it.
+
+### Whiteboard to board
+
+Whiteboards explore; boards communicate. Never reuse the whiteboard drawing style. Convert:
+
+1. Identify the core objects.
+2. Merge repeated objects into domains.
+3. Collapse free-form connections into one or two main paths.
+4. Rewrite sticky-note phrasing into short labels.
+5. Push detail into a bottom note or a companion doc, not the main drawing.
+
+### Structure before pixels
+
+Do not draw straight into SVG. Outline the board first with a fixed vocabulary, then render with the section 4 token map, so consecutive boards look like one system:
+
+```text
+Section: Target architecture
+Band: Platform surface
+Node: Collaboration
+Node: Execution
+Band: Core runtime
+Node: Sensing
+Node: Identity
+Node: Control plane
+Flow: Foundation -> Spine -> Pillars
+Note: Does not replace per-business implementations
+```
+
+Content fills the structure; the token map styles it.
+
+### Board type scale
+
+Standalone board pages run larger than embedded figures (for embedded sizing use the calibration table in section 4):
+
+| Role | Size |
+|---|---|
+| Page title | 36-40px |
+| Section title | 22-24px |
+| Block title | 17-19px |
+| Body / node description | 13-15px |
+| Caption | 11-12px |
+
+Fixed pixel sizes: no viewport-scaled type, no negative letter-spacing on body sizes. Fonts and colors come from the existing kami stacks and token map; a board introduces zero new colors and zero new fonts.
+
+### Board pre-ship scan
+
+Content:
+
+1. The reader can state the main path within 30 seconds.
+2. Each section answers exactly one question.
+3. Current state, target, intervention points, governance, and roadmap are all explicit.
+4. Everything deletable has been deleted.
+
+Visual:
+
+1. Parchment background, never pure white.
+2. One accent color.
+3. No gradient, shadow, bitmap, external fetch, or script.
+4. No overlapping text; no line over module content.
+5. Icon stroke and size uniform.
+6. Right-side captions right-aligned, with at least 56px of outer margin.
+
+File: grep the HTML for `#fff`, `gradient`, `shadow`, `<script`, `<img`, and the em dash character; every hex value must exist in the token map.
+
+---
+
+## 4. Embedding in long-doc / portfolio
 
 ### Standalone preview
 
@@ -165,7 +319,7 @@ Two spaces between `FIGURE` and the number. With `letter-spacing: 3`, a single s
 
 ---
 
-## 4. Icon style
+## 5. Icon style
 
 Icons live inside `<svg>` blocks alongside diagram nodes. Draw them with the same primitives (`rect`, `circle`, `line`, `path`) used for nodes - no imported icon fonts, no SVG sprites.
 
@@ -200,7 +354,7 @@ When in doubt, omit the icon entirely. A clean text label beats a cute icon in e
 
 ---
 
-## 5. AI-slop anti-patterns
+## 6. AI-slop anti-patterns
 
 Scan for these when drawing or reviewing:
 
@@ -225,10 +379,15 @@ Scan for these when drawing or reviewing:
 | Per-node custom widths within one diagram | Four steps at widths 60 / 76 / 80 / 100 feel hand-patched. Small diagram: 2 tiers. Large: 3 tiers. That's the full budget |
 | Porting an external diagram with one accent color per node type (purple/amber/green/red) | kami has one accent. When adapting external diagrams, migrate the focal to whichever element the caption's `<span class="hl">` emphasizes; concentrate color there, keep all other nodes neutral |
 | Ring diagram: every node is a single word, center is empty | Four labeled boxes looping with no anchor. Either add a subtitle to each node or place one line of text at the center (exit condition, LOC count, etc.). Pick one. |
+| Connector hugging a module's top edge | Reads as a broken border; the module looks pressed. Drop the line below the module with 16-24px of air and attach short stubs to the outer edge (section 3, Line discipline) |
+| Viewpoint caption ("from the X perspective", "working draft for Y") | Structure carries the viewpoint. Corner text holds only date basis, version, or data scope |
+| Paragraph inside a node | Node = optional icon + title + 2-3 short lines. Prose goes to a bottom note or companion doc |
+| Full-sentence English translation on a CN board | English is a scan anchor (`CONTROL PLANE`, `OWNER MAP`), not a second copy of the text |
+| Every fact drawn as its own small card | Peers share one band with vertical dividers; tabular facts get a table shell (section 3, Bands over cards) |
 
 ---
 
-## 6. Common pairings
+## 7. Common pairings
 
 ### Technical white paper
 - Architecture (system overview) + built-in timeline (from long-doc)
@@ -251,7 +410,7 @@ Scan for these when drawing or reviewing:
 
 ---
 
-## 7. Data charts (bar / line / donut)
+## 8. Data charts (bar / line / donut)
 
 Five data-driven chart types for investment reports, financial comparisons, and market-share breakdowns. Like the first three diagram types, all are self-contained HTML + inline SVG, embeddable in any kami document.
 
@@ -323,10 +482,11 @@ Connector: dashed 0.8px #b8b7b0 between adjacent bar edges
 
 ---
 
-## 8. Build / preview
+## 9. Build / preview
 
 ```bash
 python3 scripts/build.py diagram-architecture
+python3 scripts/build.py diagram-architecture-board
 python3 scripts/build.py diagram-flowchart
 python3 scripts/build.py diagram-quadrant
 python3 scripts/build.py diagram-bar-chart
@@ -349,6 +509,6 @@ Or just open `assets/diagrams/*.html` in a browser.
 
 ---
 
-## 9. Credit
+## 10. Credit
 
 This capability is inspired by Cathryn Lavery's [diagram-design](https://github.com/cathrynlavery/diagram-design) (a Claude Code skill with 13 editorial diagram types). kami borrowed the **approach** (inline SVG, semantic tokens, complexity budget, anti-slop table). Not the full catalog.

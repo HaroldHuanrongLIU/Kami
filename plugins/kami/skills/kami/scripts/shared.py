@@ -133,7 +133,8 @@ SCREEN_TEMPLATES: dict[str, str] = {
 # Registered here (not in build.py) so all template registries share one home.
 # The Mermaid-sourced ones are produced via scripts/mermaid_normalize.py.
 DIAGRAM_TEMPLATES: dict[str, str] = {
-    "diagram-architecture":  "architecture.html",
+    "diagram-architecture":       "architecture.html",
+    "diagram-architecture-board": "architecture-board.html",
     "diagram-flowchart":     "flowchart.html",
     "diagram-quadrant":      "quadrant.html",
     "diagram-bar-chart":     "bar-chart.html",

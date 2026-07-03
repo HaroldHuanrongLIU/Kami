@@ -143,6 +143,7 @@ When the user asks for **a diagram inside** a long-doc / portfolio / slide (not 
 | User says | Diagram | Template |
 |---|---|---|
 | "架构图 / architecture / 系统图 / components diagram" | Architecture | `assets/diagrams/architecture.html` |
+| "架构全景 / architecture board / 平台全景 / 系统大图 / five-layer panorama" | Architecture Board | `assets/diagrams/architecture-board.html` |
 | "流程图 / flowchart / 决策流 / branching logic" | Flowchart | `assets/diagrams/flowchart.html` |
 | "象限图 / quadrant / 优先级矩阵 / 2×2 matrix" | Quadrant | `assets/diagrams/quadrant.html` |
 | "柱状图 / bar chart / 分类对比 / grouped bars" | Bar Chart | `assets/diagrams/bar-chart.html` |
@@ -158,6 +159,8 @@ When the user asks for **a diagram inside** a long-doc / portfolio / slide (not 
 | "瀑布图 / waterfall / 收入桥 / revenue bridge / decomposition" | Waterfall | `assets/diagrams/waterfall.html` |
 
 Read `references/diagrams.md` before drawing - it has the selection guide, kami token map, and the AI-slop anti-pattern table. Extract the `<svg>` block from the template and drop it into a `<figure>` inside long-doc / portfolio.
+
+For a **full-system architecture board** (platform panorama, control plane, roadmap, or owner map in one artifact), do not inflate the single architecture figure past its node budget. Start from `assets/diagrams/architecture-board.html` and follow the «Architecture boards» section in `references/diagrams.md`: five fixed information layers, bands over cards, lines never on module edges, and a structure outline before any rendering.
 
 Before drawing, always ask: **would a well-written paragraph teach the reader less than this diagram?** If no, don't draw.
 

@@ -227,7 +227,7 @@ def test_registry_consistency() -> None:
           set(screen_targets()) == set(SCREEN_TARGETS))
     check("HTML_TARGETS in build.py matches build_targets()",
           dict(HTML_TARGETS) == build_targets())
-    check("DIAGRAM_TARGETS has 17 entries", len(DIAGRAM_TARGETS) == 17,
+    check("DIAGRAM_TARGETS has 18 entries", len(DIAGRAM_TARGETS) == 18,
           f"got {len(DIAGRAM_TARGETS)}")
     check("DIAGRAM_TARGETS in build.py matches shared.diagram_targets()",
           dict(DIAGRAM_TARGETS) == diagram_targets() == dict(DIAGRAM_TEMPLATES))
