@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "kami",
-      "version": "1.9.1",
+      "version": "1.9.2",
       "description": "Typeset professional documents and landing pages with the Kami design system.",
       "category": "documents",
       "source": "./plugins/kami",
