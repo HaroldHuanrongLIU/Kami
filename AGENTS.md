@@ -59,6 +59,7 @@ python3 scripts/build.py
 python3 scripts/build.py --check
 python3 scripts/build.py --verify
 python3 scripts/build.py --check-placeholders path/to/filled.html
+python3 scripts/build.py --check-markdown path/to/filled.pdf
 python3 scripts/build.py --check-orphans path/to/doc.pdf
 python3 scripts/build.py --check-density path/to/doc.pdf
 python3 scripts/build.py --check-rhythm slides slides-en
@@ -169,12 +170,14 @@ magick /tmp/stacked.png -gravity Center -background '#f5f4ed' -extent 1241x1754 
 - `scripts/build.py` sets PDF `/Author` from `git config user.name` or `KAMI_AUTHOR` only when the template still has an author placeholder. `/Producer` and `/Creator` should remain `Kami`.
 - Demo PNGs under `assets/demos/` are first-page previews at 1241x1754px. For slide demos, capture the first two landscape pages, stack them with a parchment gap, then extend to 1241x1754px.
 - Diagram count and names must stay aligned across `SKILL.md`, `CHEATSHEET.md`, `README.md`, `index*.html`, and `assets/diagrams/`.
+- Long-doc TOCs use WeasyPrint `target-counter()` and stable chapter ids for rendered page numbers. Do not reintroduce hand-written `.toc-page` spans in the templates. Running headers default to `h1`; if a filled document does not use `h1` for chapter titles, add `.running-title` to the element that should drive the header.
 
 ## Verification
 
 - Template, CSS, or script changes: run `python3 scripts/build.py --check` (CSS lint + token sync + base/variant cross-template `:root` consistency, currently CN↔EN and CN↔KO) and `python3 scripts/build.py --verify`.
 - Demo changes: regenerate the affected demo outputs and confirm page counts stay in range.
 - Font issues: run `bash scripts/ensure-fonts.sh`, then rebuild the affected target.
+- Markdown-sourced filled documents: run `python3 scripts/build.py --check-markdown path/to/filled.pdf` after rendering, especially when the source had thematic breaks, bold markers, or inline-code backticks.
 - Slide rhythm or deck changes: run `python3 scripts/build.py --check-rhythm slides slides-en` plus the affected render command.
 - Public site or AI visibility changes: check `index*.html`, README, `llms.txt`, `robots.txt`, `sitemap.xml`, JSON-LD, FAQ, install links, and release/download links together. Serve the page and screenshot 375px / 1280px per locale, plus 320px when CTA width or mobile nav changes.
 - Packaging changes: run `bash scripts/package-skill.sh` and confirm `dist/kami.zip` stays small enough for release upload. Inspect `unzip -l dist/kami.zip` for accidental large fonts, showcase screenshots, cache files, or missing new helper files.

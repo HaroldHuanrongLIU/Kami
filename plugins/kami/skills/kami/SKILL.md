@@ -470,15 +470,18 @@ python3 scripts/build.py --verify resume-en # single target full verification
 python3 scripts/build.py landing-page        # screen-first static HTML template check
 python3 scripts/build.py --verify slides    # single slide deck verification
 python3 scripts/build.py --check-placeholders path/to/filled.html
+python3 scripts/build.py --check-markdown path/to/filled.pdf
 python3 scripts/build.py --check-resume-balance path/to/resume.pdf
 python3 scripts/build.py --check-density              # page whitespace scanner (skips cover)
-python3 scripts/build.py --check            # CSS rule violations only (fast, no build)
+python3 scripts/build.py --check            # lint + token/theme + public-site fact checks
 python3 scripts/build_metadata.py --check   # Claude/Codex plugin mirror + marketplace drift check
 ```
 
 > **Screen verify**: `--check-density` is a print gate. For screen output (landing or docs pages) instead screenshot the rendered page at 375px and 1280px in every locale and scan for line widows before shipping. See `references/design.md` Section 11 «Responsive screenshot verification».
 
 Source templates intentionally keep `{{...}}` fields. Run placeholder checks on completed documents, not on the template library.
+
+For Markdown-sourced long documents, also run `--check-markdown` on the rendered PDF. It catches visible raw `---`, `**bold**`, and inline-code backticks that should have been converted or removed before delivery.
 
 Visual anomalies (tag double rectangle, font fallback, page break issues) -> `production.md` Part 4.
 

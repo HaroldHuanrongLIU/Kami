@@ -14,6 +14,7 @@ Document-generation skill and template system. Editorial HTML templates + PDF/PP
 python3 scripts/build.py                   # 构建所有目标
 python3 scripts/build.py --check           # 快速校验
 python3 scripts/build.py --verify          # 完整验证
+python3 scripts/build.py --check-markdown path/to/filled.pdf  # 检查 Markdown 标记残留
 python3 scripts/build_metadata.py --check  # Claude/Codex 插件镜像和 marketplace 漂移检查
 python3 scripts/tests/test_build.py        # 测试套件
 bash scripts/ensure-fonts.sh               # 字体恢复（缺字体或字体被截断时）

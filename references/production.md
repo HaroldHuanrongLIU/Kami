@@ -139,6 +139,11 @@ Notes:
 
 ### Headers & footers
 
+Long-doc running headers use `string(section-title)`. The default templates set
+that string on chapter `h1` elements, not on every `h2`, so a table of contents
+heading cannot pin the header to "Contents" / "目录". If a filled document uses a
+different element for chapter titles, add `.running-title` to that element.
+
 ```css
 @page {
   @top-right {
@@ -166,6 +171,7 @@ Notes:
 | `@font-face` | gradients (slow, use sparingly) | CSS animations / transitions |
 | `break-before` / `break-inside: avoid` | | |
 | CSS variables `var(--name)` | | |
+| `target-counter(attr(href), page)` for rendered TOC page numbers | | |
 | `::before` / `::after` | | |
 
 ### PDF metadata
@@ -427,7 +433,12 @@ python3 scripts/build.py               # all 12 examples
 python3 scripts/build.py resume-en     # one target + page count + fonts
 python3 scripts/build.py --check       # scan for CSS rule violations
 python3 scripts/build.py --check-density       # warn on pages with >25% trailing whitespace
+python3 scripts/build.py --check-markdown output.pdf  # scan for raw Markdown markers
 ```
+
+For long-doc templates, keep TOC entries as links to stable chapter ids. The page
+number is generated with CSS `target-counter()` at render time, so content edits
+do not require hand-updating page numbers.
 
 ### Page overflow (constrained templates)
 

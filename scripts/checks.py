@@ -14,12 +14,19 @@ Thresholds and DPI live in `references/checks_thresholds.json`.
 from __future__ import annotations
 
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 
-from optional_deps import MissingDepError, require_pymupdf
+from optional_deps import MissingDepError, require_pymupdf, require_pypdf_reader
 from shared import EXAMPLES, PARCHMENT_RGB, ROOT, load_checks_thresholds
 
 PLACEHOLDER = re.compile(r"\{\{[^}]+\}\}")
+MARKDOWN_THEMATIC_BREAK = re.compile(r"^\s*[-*_]{3,}\s*$")
+MARKDOWN_RESIDUE_MARKERS = (
+    ("markdown thematic break", MARKDOWN_THEMATIC_BREAK),
+    ("unconverted bold marker", re.compile(r"\*\*")),
+    ("unconverted inline-code marker", re.compile(r"`")),
+)
 
 # Parchment background RGB for pixel comparison (sourced from shared.PARCHMENT_RGB).
 _BG_R, _BG_G, _BG_B = PARCHMENT_RGB
@@ -49,6 +56,119 @@ def check_placeholders(paths: list[str]) -> int:
         else:
             print(f"OK: {rel}: no placeholders")
 
+    return 0 if failures == 0 else 1
+
+
+# ---------- markdown residue check ----------
+
+class _VisibleTextParser(HTMLParser):
+    """Extract visible text from filled HTML while skipping code-like blocks."""
+
+    _SKIP_TAGS = {"code", "pre", "script", "style"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._skip_depth = 0
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in self._SKIP_TAGS:
+            self._skip_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._SKIP_TAGS and self._skip_depth > 0:
+            self._skip_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth == 0:
+            self.parts.append(data)
+
+
+def _visible_html_text(raw: str) -> str:
+    parser = _VisibleTextParser()
+    parser.feed(raw)
+    return "\n".join(parser.parts)
+
+
+def _markdown_residue_issues(text: str, *, page: int | None = None) -> list[str]:
+    issues: list[str] = []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        for label, pattern in MARKDOWN_RESIDUE_MARKERS:
+            if pattern.search(line):
+                where = f"p{page}" if page is not None else f"line {line_no}"
+                sample = " ".join(line.strip().split())[:80]
+                issues.append(f"{where}: {label}: {sample!r}")
+    return issues
+
+
+def _markdown_text_chunks(path: Path) -> tuple[list[tuple[int | None, str]], str | None]:
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        try:
+            PdfReader = require_pypdf_reader()
+        except MissingDepError as exc:
+            return [], str(exc)
+        try:
+            reader = PdfReader(str(path))
+        except Exception as exc:
+            return [], f"could not read PDF text: {exc}"
+        return [
+            (index, page.extract_text() or "")
+            for index, page in enumerate(reader.pages, start=1)
+        ], None
+
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    if suffix in {".html", ".htm"}:
+        return [(None, _visible_html_text(raw))], None
+    return [(None, raw)], None
+
+
+def check_markdown_residue(paths: list[str]) -> int:
+    """Scan filled HTML/PDF outputs for visible raw Markdown markers.
+
+    This catches common hand-conversion misses such as literal `---`, `**bold**`,
+    and inline-code backticks leaking into the final PDF.
+    """
+    if not paths:
+        if EXAMPLES.exists():
+            paths = [str(p) for p in sorted(EXAMPLES.glob("*.pdf"))]
+        if not paths:
+            print("ERROR: no files to scan")
+            return 2
+
+    failures = 0
+    scanned = 0
+    for raw in paths:
+        path = Path(raw)
+        if not path.is_absolute():
+            path = ROOT / path
+        rel = path.relative_to(ROOT) if path.exists() and path.is_relative_to(ROOT) else path
+        if not path.exists():
+            print(f"ERROR: {raw}: file not found")
+            failures += 1
+            continue
+
+        chunks, error = _markdown_text_chunks(path)
+        if error:
+            print(f"ERROR: {rel}: {error}")
+            failures += 1
+            continue
+
+        scanned += 1
+        issues: list[str] = []
+        for page, text in chunks:
+            issues.extend(_markdown_residue_issues(text, page=page))
+        if issues:
+            failures += 1
+            print(f"ERROR: {rel}: markdown residue found")
+            for issue in issues:
+                print(f"  {issue}")
+        else:
+            print(f"OK: {rel}: no markdown residue")
+
+    if scanned == 0:
+        print("ERROR: no files scanned")
+        return 2
     return 0 if failures == 0 else 1
 
 

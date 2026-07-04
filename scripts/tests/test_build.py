@@ -36,12 +36,14 @@ from build import (  # noqa: E402
     _BG_R,
     _extract_root_vars,
     _last_content_y,
+    _markdown_residue_issues,
     _off_palette_findings,
     _pair_names,
     _parse_slide_sequence,
     _resume_balance_issues,
     check_all,
     check_cross_template_consistency,
+    check_markdown_residue,
     check_off_palette,
     check_placeholders,
     main as build_main,
@@ -327,6 +329,45 @@ def test_build_cli_rejects_unexpected_flags() -> None:
     check("build.py rejects unknown --verify flags",
           rc == 2 and "ERROR: unexpected argument: -v" in out,
           out.strip())
+
+    rc, out = run_build_args(["--check-markdown", "-v"])
+    check("build.py rejects unknown --check-markdown flags",
+          rc == 2 and "ERROR: unexpected argument: -v" in out,
+          out.strip())
+
+
+def test_long_doc_templates_use_rendered_toc_pages_and_chapter_headers() -> None:
+    """Long-doc TOCs must use WeasyPrint target-counter, and running headers
+    must follow chapter h1 titles instead of getting stuck on the TOC h2.
+    """
+    sources = ("long-doc.html", "long-doc-en.html", "long-doc-ko.html")
+    required_ids = {
+        "#ch-executive-summary",
+        "#ch-background",
+        "#ch-methodology",
+        "#ch-conclusions",
+        "#ch-appendix",
+    }
+    offenders: list[str] = []
+    for source in sources:
+        text = (TEMPLATES / source).read_text(encoding="utf-8")
+        if "target-counter(attr(href), page)" not in text:
+            offenders.append(f"{source}: missing target-counter")
+        if ".toc-page" in text:
+            offenders.append(f"{source}: still has obsolete toc-page wiring")
+        missing_ids = sorted(href for href in required_ids if f'href="{href}"' not in text or f'id="{href[1:]}"' not in text)
+        if missing_ids:
+            offenders.append(f"{source}: missing TOC href/id pairs {missing_ids}")
+        h1_block = re.search(r"(?m)^  h1\s*\{(?P<body>.*?)^  \}", text, re.S)
+        if not h1_block or "string-set: section-title content();" not in h1_block.group("body"):
+            offenders.append(f"{source}: h1 does not set running header")
+        h2_block = re.search(r"(?m)^  h2\s*\{(?P<body>.*?)^  \}", text, re.S)
+        if h2_block and "string-set:" in h2_block.group("body"):
+            offenders.append(f"{source}: h2 still sets running header")
+
+    check("long-doc templates use rendered TOC pages and chapter headers",
+          not offenders,
+          "; ".join(offenders))
 
 
 def test_site_facts_repo_clean() -> None:
@@ -816,6 +857,38 @@ def test_check_placeholders_passes_clean() -> None:
         check("check_placeholders passes clean file", rc == 0, f"rc={rc}")
     finally:
         p.unlink(missing_ok=True)
+
+
+def test_markdown_residue_flags_raw_markers() -> None:
+    issues = _markdown_residue_issues("Intro\n---\nThis has **raw bold** and `raw code`.")
+    check("markdown residue flags thematic breaks",
+          any("thematic break" in issue for issue in issues),
+          f"issues={issues}")
+    check("markdown residue flags raw bold markers",
+          any("bold marker" in issue for issue in issues),
+          f"issues={issues}")
+    check("markdown residue flags raw inline-code markers",
+          any("inline-code marker" in issue for issue in issues),
+          f"issues={issues}")
+
+    check("markdown residue ignores clean text",
+          _markdown_residue_issues("Clean paragraph with converted emphasis.") == [])
+
+
+def test_check_markdown_residue_skips_html_code_blocks() -> None:
+    dirty = write_temp_html("<html><body><p>Visible **raw bold**</p></body></html>", suffix=".html")
+    clean_code = write_temp_html(
+        "<html><body><p>Visible text</p><pre><code>**example** `cmd`</code></pre></body></html>",
+        suffix=".html",
+    )
+    try:
+        rc = silently(check_markdown_residue, [str(dirty)])
+        check("check_markdown_residue fails visible raw markdown", rc == 1, f"rc={rc}")
+        rc = silently(check_markdown_residue, [str(clean_code)])
+        check("check_markdown_residue skips code/pre blocks", rc == 0, f"rc={rc}")
+    finally:
+        dirty.unlink(missing_ok=True)
+        clean_code.unlink(missing_ok=True)
 
 
 # --------------------------- cross-template consistency ---------------------------
