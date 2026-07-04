@@ -6,9 +6,11 @@ registry and public constants so `build.py --check` catches drift before CI.
 """
 from __future__ import annotations
 
+import difflib
 import html
 import re
 from collections.abc import Mapping
+from html.parser import HTMLParser
 
 from shared import (
     CLAUDE_CODE_INSTALL_COMMANDS,
@@ -34,6 +36,23 @@ FULL_PUBLIC_FACT_FILES = (
 )
 REDIRECT_SITE_FILE = "index-en.html"
 SITE_SURFACE_ABSENT = "__site_surface_absent__"
+
+# Locale pages are hand-maintained forks of index.html. Their DOM skeletons
+# must stay identical; the only allowed divergence is the language-redirect
+# <script> that exists solely on the default page.
+SITE_BASE_PAGE = "index.html"
+SITE_LOCALE_PAGES = (
+    "index-zh.html",
+    "index-ja.html",
+    "index-ko.html",
+    "index-tw.html",
+)
+
+_SKELETON_TAGS = frozenset({
+    "article", "aside", "dl", "figure", "footer", "form", "header",
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "main", "nav", "ol", "section", "script", "svg", "table", "ul",
+})
 
 _TEMPLATE_COUNT_PATTERNS = (
     r"\b8 document template",
@@ -82,6 +101,75 @@ def _file_texts(files: Mapping[str, str] | None) -> tuple[dict[str, str], list[s
             continue
         texts[rel] = path.read_text(encoding="utf-8", errors="replace")
     return texts, issues
+
+
+class _SkeletonParser(HTMLParser):
+    """Collect the structural tag sequence of a page, annotated enough to
+    catch real drift (class identity, script type) without tracking text."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.rows: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag not in _SKELETON_TAGS:
+            return
+        attr_map = dict(attrs)
+        row = tag
+        css_class = (attr_map.get("class") or "").strip()
+        if css_class:
+            row += f".{css_class}"
+        if tag == "script":
+            script_type = (attr_map.get("type") or "").strip()
+            if script_type:
+                row += f"[{script_type}]"
+        self.rows.append(row)
+
+
+def _page_skeleton(text: str) -> list[str]:
+    parser = _SkeletonParser()
+    parser.feed(text)
+    return parser.rows
+
+
+def _drop_language_redirect_script(rows: list[str]) -> list[str]:
+    """Return rows minus the first bare <script> (the default page's
+    language redirect), which locale pages intentionally omit."""
+    for index, row in enumerate(rows):
+        if row == "script":
+            return rows[:index] + rows[index + 1:]
+    return rows
+
+
+def site_structure_issues(files: Mapping[str, str] | None = None) -> list[str]:
+    """Compare each locale page's DOM skeleton against index.html."""
+    texts, issues = _file_texts(files)
+    if SITE_SURFACE_ABSENT in texts:
+        return []
+
+    base_raw = texts.get(SITE_BASE_PAGE)
+    if base_raw is None:
+        return issues
+    expected = _drop_language_redirect_script(_page_skeleton(base_raw))
+
+    for rel in SITE_LOCALE_PAGES:
+        raw = texts.get(rel)
+        if raw is None:
+            continue
+        rows = _page_skeleton(raw)
+        if rows == expected:
+            continue
+        delta = [
+            line for line in difflib.unified_diff(expected, rows, lineterm="", n=0)
+            if line[:1] in "+-" and line[:3] not in ("+++", "---")
+        ]
+        preview = "; ".join(delta[:6]) + (" ..." if len(delta) > 6 else "")
+        issues.append(
+            f"{rel}: DOM skeleton drifted from {SITE_BASE_PAGE} "
+            f"({len(delta)} row(s): {preview})"
+        )
+
+    return issues
 
 
 def site_fact_issues(files: Mapping[str, str] | None = None) -> list[str]:
@@ -152,15 +240,29 @@ def check_site_facts(verbose: bool = False) -> int:
         print("OK: public site facts skipped (site files absent)")
         return 0
 
+    result = 0
+
     issues = site_fact_issues()
     if not issues:
         scanned = len(FULL_PUBLIC_FACT_FILES) + 1
         print(f"OK: public site facts in sync across {scanned} file(s)")
-        return 0
+    else:
+        print(f"\n[site-fact-drift] {len(issues)}")
+        for issue in issues:
+            print(f"  {issue}")
+        if verbose:
+            print("  source: shared public constants and template registries")
+        result = 1
 
-    print(f"\n[site-fact-drift] {len(issues)}")
-    for issue in issues:
-        print(f"  {issue}")
-    if verbose:
-        print("  source: shared public constants and template registries")
-    return 1
+    structure_issues = site_structure_issues()
+    if not structure_issues:
+        print(f"OK: locale page structure matches {SITE_BASE_PAGE} across {len(SITE_LOCALE_PAGES)} page(s)")
+    else:
+        print(f"\n[site-structure-drift] {len(structure_issues)}")
+        for issue in structure_issues:
+            print(f"  {issue}")
+        if verbose:
+            print(f"  source: DOM skeleton comparison against {SITE_BASE_PAGE}")
+        result = 1
+
+    return result

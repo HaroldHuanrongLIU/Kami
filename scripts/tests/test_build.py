@@ -65,6 +65,7 @@ from site_facts import (  # noqa: E402
     REDIRECT_SITE_FILE,
     check_site_facts,
     site_fact_issues,
+    site_structure_issues,
 )
 from tokens import _mermaid_theme_drift  # noqa: E402
 from verify import RECOGNIZABLE_FALLBACK_FONT_MARKERS  # noqa: E402
@@ -118,6 +119,7 @@ def site_fact_file_map() -> dict[str, str]:
 # --------------------------- package archive ---------------------------
 
 PACKAGE_MAX_BYTES = 6_000_000
+PACKAGE_ROOT_NAME = "kami"
 PACKAGE_FORBIDDEN_EXACT = {
     ".claude-plugin/marketplace.json",
     ".gitignore",
@@ -188,22 +190,32 @@ def test_dist_package_contents() -> None:
     with zipfile.ZipFile(archive) as zf:
         names = set(zf.namelist())
 
+    bad_root = sorted(name for name in names if not name.startswith(f"{PACKAGE_ROOT_NAME}/"))
+    check("dist/kami.zip uses a Claude-friendly top-level skill folder",
+          not bad_root,
+          f"entries outside {PACKAGE_ROOT_NAME}/: {', '.join(bad_root)}")
+
+    payload_names = {
+        name.removeprefix(f"{PACKAGE_ROOT_NAME}/")
+        for name in names
+        if name.startswith(f"{PACKAGE_ROOT_NAME}/")
+    }
     forbidden = sorted(
-        name for name in names
+        name for name in payload_names
         if name.startswith(PACKAGE_FORBIDDEN_PREFIXES)
         or name in PACKAGE_FORBIDDEN_EXACT
     )
     check("dist/kami.zip excludes site, CI, tests, demos, generated mirrors, and large bundled fonts",
           not forbidden,
           f"forbidden entries: {', '.join(forbidden)}")
-    missing_required = sorted(PACKAGE_REQUIRED_ENTRIES - names)
+    missing_required = sorted(PACKAGE_REQUIRED_ENTRIES - payload_names)
     check("dist/kami.zip keeps required runtime skill files",
           not missing_required,
           f"missing entries: {', '.join(missing_required)}")
 
 
-def test_codex_plugin_metadata_generated() -> None:
-    """Codex marketplace and plugin mirror must stay generated from source."""
+def test_plugin_metadata_generated() -> None:
+    """Claude Code / Codex marketplaces and plugin mirrors must stay generated."""
     script = REPO_ROOT / "scripts" / "build_metadata.py"
     check("build_metadata.py exists", script.exists(), f"missing {script}")
     if not script.exists():
@@ -216,7 +228,7 @@ def test_codex_plugin_metadata_generated() -> None:
         text=True,
     )
     detail = (result.stdout + result.stderr).strip()
-    check("Codex plugin metadata matches generator", result.returncode == 0, detail)
+    check("plugin metadata matches generator", result.returncode == 0, detail)
 
 
 def test_claude_plugin_marketplace_version_matches_version_file() -> None:
@@ -237,6 +249,22 @@ def test_claude_plugin_marketplace_version_matches_version_file() -> None:
     check("Claude plugin marketplace version matches VERSION",
           kami_plugin.get("version") == version,
           f"marketplace={kami_plugin.get('version')!r}, VERSION={version!r}")
+    check("Claude plugin marketplace installs the lightweight plugin directory",
+          kami_plugin.get("source") == "./plugins/kami",
+          f"source={kami_plugin.get('source')!r}")
+
+    plugin_file = REPO_ROOT / "plugins" / "kami" / ".claude-plugin" / "plugin.json"
+    check("Claude plugin manifest exists in generated plugin tree", plugin_file.exists())
+    if not plugin_file.exists():
+        return
+
+    plugin = json.loads(plugin_file.read_text(encoding="utf-8"))
+    check("Claude plugin manifest version matches VERSION",
+          plugin.get("version") == version,
+          f"plugin={plugin.get('version')!r}, VERSION={version!r}")
+    check("Claude plugin manifest exposes skills directory",
+          plugin.get("skills") == "./skills/",
+          f"skills={plugin.get('skills')!r}")
 
 
 def test_build_metadata_reads_tokens_from_root_argument() -> None:
@@ -317,6 +345,24 @@ def test_site_facts_flags_bad_diagram_count() -> None:
     issues = site_fact_issues(files)
     check("public site facts flag stale diagram counts",
           any("index.html: missing diagram count 18" in issue for issue in issues),
+          f"issues: {issues}")
+
+
+def test_site_structure_repo_clean() -> None:
+    """Locale pages match index.html's DOM skeleton (redirect script exempt)."""
+    issues = site_structure_issues()
+    check("locale page structure matches index.html", not issues,
+          f"issues: {issues}")
+
+
+def test_site_structure_flags_locale_drift() -> None:
+    files = site_fact_file_map()
+    files["index-zh.html"] = files["index-zh.html"].replace(
+        '<h2 class="section-title">', '<h3 class="section-title">', 1)
+
+    issues = site_structure_issues(files)
+    check("locale structure check flags a drifted heading",
+          any("index-zh.html: DOM skeleton drifted" in issue for issue in issues),
           f"issues: {issues}")
 
 
@@ -608,8 +654,8 @@ def test_check_update_script() -> None:
 
         rc, out = run(str(dp / "c1"), newer.as_uri())
         check("check-update notifies on a newer remote", rc == 0 and "9.9.9" in out, out)
-        check("check-update default command uses skills add subpath",
-              "npx skills add tw93/kami/plugins/kami/skills/kami" in out and "skills update" not in out,
+        check("check-update default command uses plugin bundle path",
+              "npx skills add tw93/kami/plugins/kami -a universal -g -y" in out and "skills update" not in out,
               out)
 
         rc, out = run(str(dp / "c2"), same.as_uri())
@@ -661,6 +707,40 @@ def test_check_update_uses_codex_plugin_update_command() -> None:
             check(f"check-update uses Codex plugin update command ({install_root.parent.parent.parent.name})",
                   result.returncode == 0 and "codex plugin marketplace upgrade kami" in out,
                   out)
+
+
+def test_check_update_uses_claude_plugin_update_command() -> None:
+    """When installed through Claude Code's plugin cache, the update hint should
+    use Claude's plugin updater instead of generic npx skill install.
+    """
+    script = REPO_ROOT / "scripts" / "check-update.sh"
+    check("check-update.sh exists for Claude command test", script.exists())
+    if not script.exists():
+        return
+    if shutil.which("bash") is None or shutil.which("curl") is None:
+        check("check-update Claude command (skipped: bash/curl unavailable)", True)
+        return
+
+    with tempfile.TemporaryDirectory() as d:
+        dp = Path(d)
+        newer = dp / "newer"
+        newer.write_text("9.9.9\n")
+        install_root = dp / ".claude" / "plugins" / "cache" / "kami" / "kami" / "1.9.1" / "skills" / "kami"
+        (install_root / "scripts").mkdir(parents=True)
+        shutil.copy2(script, install_root / "scripts" / "check-update.sh")
+        (install_root / "VERSION").write_text("1.9.1\n")
+
+        env = dict(os.environ, XDG_CACHE_HOME=str(dp / "cache"), KAMI_UPDATE_URL=newer.as_uri())
+        result = subprocess.run(
+            ["bash", str(install_root / "scripts" / "check-update.sh")],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        out = result.stdout.strip()
+        check("check-update uses Claude plugin update command",
+              result.returncode == 0 and "claude plugin update kami" in out and "npx skills" not in out,
+              out)
 
 
 def test_lint_repo_clean() -> None:

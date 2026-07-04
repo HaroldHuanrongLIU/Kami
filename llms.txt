@@ -20,8 +20,8 @@ Kami is a layout design system for the AI era. Give Claude (or any LLM) a brief,
 ## Install
 - Claude Code (v2.1.142+): `/plugin marketplace add tw93/kami && /plugin install kami@kami`
 - Codex plugin marketplace: `codex plugin marketplace add tw93/kami && codex plugin add kami@kami`
-- Generic agents (OpenCode, Pi): `npx skills add tw93/kami/plugins/kami/skills/kami -a '*' -g -y`
-- Claude Desktop: download `kami.zip` from GitHub Releases and upload it in Skills settings
+- Generic agents (`~/.agents`): `npx skills add tw93/kami/plugins/kami -a universal -g -y`
+- Claude Desktop: download the release asset `kami.zip` from GitHub Releases (not the source-code ZIP) and upload it in Skills settings
 
 ## Templates
 - 8 document template types: One-pager, Letter, Resume, Long document, Portfolio, Slides, Equity report, Changelog

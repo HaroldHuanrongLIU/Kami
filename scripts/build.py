@@ -294,15 +294,6 @@ def verify_slides_target(name: str) -> list[str]:
     return [] if build_slides(name) else ["slides build failed"]
 
 
-def verify_target(name: str, source: str, max_pages: int, src_dir: Path) -> list[str]:
-    """Compat wrapper that injects build.py's metadata helpers."""
-    return _verify_target_impl(
-        name, source, max_pages, src_dir,
-        infer_author_fn=infer_author,
-        set_pdf_metadata_fn=set_pdf_metadata,
-    )
-
-
 def _verify_all(target: str | None) -> int:
     return verify_all(
         target,

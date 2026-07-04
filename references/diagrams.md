@@ -507,6 +507,8 @@ python3 scripts/build.py
 
 Or just open `assets/diagrams/*.html` in a browser.
 
+Every diagram template carries a poster-size `@page` sized to its own frame and viewBox, so the WeasyPrint build exports one uncropped sheet instead of clipping at A4. Browsers ignore `@page`; only the PDF export path sees it.
+
 ---
 
 ## 10. Credit

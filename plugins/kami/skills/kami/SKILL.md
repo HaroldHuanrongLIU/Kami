@@ -473,7 +473,7 @@ python3 scripts/build.py --check-placeholders path/to/filled.html
 python3 scripts/build.py --check-resume-balance path/to/resume.pdf
 python3 scripts/build.py --check-density              # page whitespace scanner (skips cover)
 python3 scripts/build.py --check            # CSS rule violations only (fast, no build)
-python3 scripts/build_metadata.py --check   # Codex plugin mirror + marketplace drift check
+python3 scripts/build_metadata.py --check   # Claude/Codex plugin mirror + marketplace drift check
 ```
 
 > **Screen verify**: `--check-density` is a print gate. For screen output (landing or docs pages) instead screenshot the rendered page at 375px and 1280px in every locale and scan for line widows before shipping. See `references/design.md` Section 11 «Responsive screenshot verification».
@@ -486,7 +486,7 @@ Visual anomalies (tag double rectangle, font fallback, page break issues) -> `pr
 
 Use these only when maintaining this repository or release package, not for ordinary document generation.
 
-- If marketplace metadata, generated plugin mirrors, version selection, or install paths change, run `python3 scripts/build_metadata.py --check`; for Codex install behavior, also smoke with an isolated `CODEX_HOME=/tmp/...` using `codex plugin marketplace add <path>`, `codex plugin add kami@kami`, and `codex plugin list`.
+- If marketplace metadata, generated plugin mirrors, version selection, or install paths change, run `python3 scripts/build_metadata.py --check`; for Claude Code install behavior, smoke with an isolated `HOME=/tmp/...` using `claude plugin marketplace add <path>`, `claude plugin install kami@kami`, and `claude plugin details kami@kami`; for Codex install behavior, smoke with an isolated `CODEX_HOME=/tmp/...` using `codex plugin marketplace add <path>`, `codex plugin add kami@kami`, and `codex plugin list`.
 - If `SKILL.md`, templates, scripts, references, or other package inputs change and the behavior ships through the skill package, run `bash scripts/package-skill.sh` and inspect `dist/kami.zip` before handoff.
 - If a GitHub release asset is refreshed, download the uploaded `kami.zip` and compare ZIP entry names plus per-entry SHA-256 digests against local `dist/kami.zip`; page text, file size, and the container hash are not enough.
 
@@ -513,7 +513,7 @@ Use these only when maintaining this repository or release package, not for ordi
 - No separate sans: `--sans: var(--serif)`, one font per page
 - Fallback: Georgia (cross-platform) / Palatino / Times New Roman
 
-Font files next to HTML with relative `@font-face` paths is the most stable setup. `scripts/package-skill.sh` excludes large CJK font files from the Claude Desktop ZIP, so the uploaded package stays under the 6MB package ceiling. Always upload that `package-skill.sh` output, never a hand-zipped checkout (the tracked CJK fonts make it too large and Claude Desktop rejects the upload).
+Font files next to HTML with relative `@font-face` paths is the most stable setup. `scripts/package-skill.sh` excludes large CJK font files from the Claude Desktop ZIP, so the uploaded package stays under the 6MB package ceiling and contains a top-level `kami/` skill folder. Always upload that `package-skill.sh` output, never a hand-zipped checkout (the tracked CJK fonts make it too large and Claude Desktop rejects the upload).
 
 **Font auto-recovery (Claude Desktop)**
 

@@ -34,12 +34,11 @@ CODEX_PLUGIN_INSTALL_COMMANDS = (
     f"codex plugin marketplace add {PUBLIC_REPO}",
     "codex plugin add kami@kami",
 )
-GENERIC_AGENT_INSTALL_COMMAND = f"npx skills add {PUBLIC_REPO}/plugins/kami/skills/kami -a '*' -g -y"
+GENERIC_AGENT_INSTALL_COMMAND = f"npx skills add {PUBLIC_REPO}/plugins/kami -a universal -g -y"
 CLAUDE_DESKTOP_PACKAGE_URL = "https://github.com/tw93/kami/releases/latest/download/kami.zip"
 
 # Canonical parchment background color, kept here so build/density
 # checks share one source of truth instead of redefining the RGB triple.
-PARCHMENT_HEX = "#f5f4ed"
 PARCHMENT_RGB = (0xF5, 0xF4, 0xED)
 
 _HOMEBREW_PREFIXES = (Path("/opt/homebrew"), Path("/usr/local"))
