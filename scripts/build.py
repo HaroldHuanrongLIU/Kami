@@ -56,10 +56,13 @@ from checks import (  # noqa: F401  re-exported for test_build.py
     _BG_B,
     _BG_G,
     _BG_R,
+    _density_bucket,
     _last_content_y,
     _markdown_residue_issues,
+    _orphan_last_line,
     _parse_slide_sequence,
     _resume_balance_issues,
+    _rhythm_issues,
     _scan_density,
     check_density,
     check_markdown_residue,
@@ -82,7 +85,6 @@ from tokens import sync_check
 from verify import (
     show_fonts,
     verify_all,
-    verify_target as _verify_target_impl,
 )
 
 # name -> (source, max_pages). max_pages=0 means no hard check.

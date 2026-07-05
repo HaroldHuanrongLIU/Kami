@@ -174,6 +174,22 @@ def check_markdown_residue(paths: list[str]) -> int:
 
 # ---------- orphan check ----------
 
+def _orphan_last_line(text: str, max_words: int, max_chars: int) -> str | None:
+    """Return a block's last line if it is an orphan, else None.
+
+    A block orphans when it has 2+ lines and the trailing line is short by
+    both word count (<= max_words) and length (< max_chars). Pure so the
+    predicate is unit-testable without a rendered PDF.
+    """
+    lines = text.strip().splitlines()
+    if len(lines) < 2:
+        return None
+    last = lines[-1].strip()
+    if len(last.split()) <= max_words and len(last) < max_chars:
+        return last
+    return None
+
+
 def check_orphans(paths: list[str]) -> int:
     """Scan PDF for text blocks whose last line has <= max_words and < max_chars."""
     try:
@@ -202,8 +218,13 @@ def check_orphans(paths: list[str]) -> int:
             print(f"ERROR: {raw}: not found")
             missing += 1
             continue
+        try:
+            doc = fitz.open(str(path))
+        except Exception as exc:
+            print(f"ERROR: {raw}: could not read PDF: {exc}")
+            missing += 1
+            continue
         scanned += 1
-        doc = fitz.open(str(path))
         rel = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
         for page_num in range(len(doc)):
             page = doc[page_num]
@@ -211,14 +232,10 @@ def check_orphans(paths: list[str]) -> int:
             for bx0, by0, bx1, by1, text, block_no, block_type in blocks:
                 if block_type != 0:  # text blocks only
                     continue
-                lines = text.strip().splitlines()
-                if len(lines) < 2:
-                    continue
-                last = lines[-1].strip()
-                words = last.split()
-                if len(words) <= max_words and len(last) < max_chars:
+                last = _orphan_last_line(text, max_words, max_chars)
+                if last is not None:
                     total += 1
-                    print(f"  {rel} p{page_num + 1}: orphan: \"{last}\" ({len(words)} word(s), {len(last)} chars)")
+                    print(f"  {rel} p{page_num + 1}: orphan: \"{last}\" ({len(last.split())} word(s), {len(last)} chars)")
         doc.close()
 
     if scanned == 0:
@@ -273,6 +290,21 @@ def _last_content_y(samples: bytes, w: int, h: int, stride: int, n: int) -> int:
     return int(non_bg[-1]) if non_bg.size else 0
 
 
+def _density_bucket(empty: float, warn_pct: float, sparse_pct: float) -> str:
+    """Categorize a page by its trailing-whitespace fraction.
+
+    Pure so `_scan_density` and its tests share one decision. A test that
+    reimplements these comparisons would stay green if the real operators
+    drifted (`>` to `>=`, or warn/sparse swapped); calling this keeps the
+    assertion anchored to production logic.
+    """
+    if empty > sparse_pct:
+        return "SPARSE"
+    if empty > warn_pct:
+        return "WARN"
+    return "OK"
+
+
 def _scan_density(paths: list[str]) -> tuple[int, int, int, int] | None:
     """Scan PDFs and print SPARSE/WARN lines.
 
@@ -301,8 +333,13 @@ def _scan_density(paths: list[str]) -> tuple[int, int, int, int] | None:
             print(f"ERROR: {raw}: not found")
             missing += 1
             continue
+        try:
+            doc = fitz.open(str(path))
+        except Exception as exc:
+            print(f"ERROR: {raw}: could not read PDF: {exc}")
+            missing += 1
+            continue
         scanned += 1
-        doc = fitz.open(str(path))
         rel = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
         for page_num in range(len(doc)):
             if page_num == 0:
@@ -315,10 +352,11 @@ def _scan_density(paths: list[str]) -> tuple[int, int, int, int] | None:
             last_content_y = _last_content_y(pix.samples, w, h, pix.stride, pix.n)
 
             empty = (h - last_content_y) / h
-            if empty > sparse_pct:
+            bucket = _density_bucket(empty, warn_pct, sparse_pct)
+            if bucket == "SPARSE":
                 print(f"  SPARSE: {rel} p{page_num + 1}: {empty:.0%} trailing whitespace")
                 sparse += 1
-            elif empty > warn_pct:
+            elif bucket == "WARN":
                 print(f"  WARN: {rel} p{page_num + 1}: {empty:.0%} trailing whitespace")
                 warn += 1
         doc.close()
@@ -391,7 +429,11 @@ def _resume_page_fills(path: Path, dpi: int) -> tuple[list[float], int] | None:
         print(f"ERROR: {exc}")
         return None
 
-    doc = fitz.open(str(path))
+    try:
+        doc = fitz.open(str(path))
+    except Exception as exc:
+        print(f"ERROR: {path}: could not read PDF: {exc}")
+        return None
     fills: list[float] = []
     for page in doc:
         pix = page.get_pixmap(dpi=dpi)
@@ -479,6 +521,37 @@ def _parse_slide_sequence(src: Path) -> list[str]:
     return sequence
 
 
+def _rhythm_issues(seq: list[str], max_content_run: int, divider_min_deck_size: int) -> list[str]:
+    """Return the rhythm warnings for one parsed slide sequence.
+
+    Pure so the three monotony rules are unit-testable without rendering a
+    deck, matching the `_resume_balance_issues` seam.
+    """
+    issues: list[str] = []
+
+    # Rule 1: no run of more than `max_content_run` consecutive content_slides.
+    run = 0
+    max_run = 0
+    for fn in seq:
+        if fn == "content_slide":
+            run += 1
+            max_run = max(max_run, run)
+        else:
+            run = 0
+    if max_run > max_content_run:
+        issues.append(f"longest content_slide run is {max_run} (limit {max_content_run})")
+
+    # Rule 2: large decks need at least one chapter_slide divider.
+    if len(seq) >= divider_min_deck_size and not any(fn in _DIVIDER_FUNCS for fn in seq):
+        issues.append(f"{len(seq)} slides with no chapter_slide divider")
+
+    # Rule 3: deck must contain at least one density-variation slide.
+    if not any(fn in _DENSITY_VARIATION_FUNCS for fn in seq):
+        issues.append("no quote_slide or metrics_slide for density variation")
+
+    return issues
+
+
 def check_rhythm(targets: list[str], pptx_targets: dict[str, str], templates_dir: Path) -> int:
     """Scan slide templates for monotony: too many consecutive content_slides,
     missing dividers, and missing density variation.
@@ -509,33 +582,18 @@ def check_rhythm(targets: list[str], pptx_targets: dict[str, str], templates_dir
             failures += 1
             continue
 
-        issues: list[str] = []
-
-        # Rule 1: no run of more than `max_content_run` consecutive content_slides.
-        run = 0
-        max_run = 0
-        for fn in seq:
-            if fn == "content_slide":
-                run += 1
-                max_run = max(max_run, run)
-            else:
-                run = 0
-        if max_run > max_content_run:
-            issues.append(f"longest content_slide run is {max_run} (limit {max_content_run})")
-
-        # Rule 2: large decks need at least one chapter_slide divider.
-        if len(seq) >= divider_min_deck_size and not any(fn in _DIVIDER_FUNCS for fn in seq):
-            issues.append(f"{len(seq)} slides with no chapter_slide divider")
-
-        # Rule 3: deck must contain at least one density-variation slide.
-        if not any(fn in _DENSITY_VARIATION_FUNCS for fn in seq):
-            issues.append("no quote_slide or metrics_slide for density variation")
+        issues = _rhythm_issues(seq, max_content_run, divider_min_deck_size)
 
         if issues:
             for issue in issues:
                 print(f"WARN: {name}: {issue}")
             failures += 1
         else:
+            content_run = 0
+            max_run = 0
+            for fn in seq:
+                content_run = content_run + 1 if fn == "content_slide" else 0
+                max_run = max(max_run, content_run)
             print(f"OK: {name}: rhythm ok ({len(seq)} slides, max run {max_run})")
 
     return 0 if failures == 0 else 1

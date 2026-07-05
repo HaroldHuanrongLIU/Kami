@@ -34,13 +34,16 @@ from build import (  # noqa: E402
     _BG_B,
     _BG_G,
     _BG_R,
+    _density_bucket,
     _extract_root_vars,
     _last_content_y,
     _markdown_residue_issues,
     _off_palette_findings,
+    _orphan_last_line,
     _pair_names,
     _parse_slide_sequence,
     _resume_balance_issues,
+    _rhythm_issues,
     check_all,
     check_cross_template_consistency,
     check_markdown_residue,
@@ -58,6 +61,7 @@ from shared import (  # noqa: E402
     TEMPLATES,
     build_targets,
     diagram_targets,
+    load_checks_thresholds,
     screen_targets,
 )
 import highlight as highlight_mod  # noqa: E402
@@ -990,31 +994,83 @@ def test_last_content_y_blank_page() -> None:
 
 
 def test_density_threshold_buckets() -> None:
-    """Verify the SPARSE (>50%) / WARN (>25%) / OK categorization that
-    _scan_density applies after computing empty = (h - last_content_y) / h."""
-    w, h, n = 80, 100, 3
+    """Drive the real `_density_bucket` seam so the SPARSE (>50%) / WARN (>25%)
+    / OK categorization is asserted against production logic, not a reimplemented
+    copy. A `>`->`>=` slip or a warn/sparse swap in checks.py fails here."""
+    density_cfg = load_checks_thresholds()["density"]
+    warn_pct = float(density_cfg["warn_pct"])
+    sparse_pct = float(density_cfg["sparse_pct"])
     cases = [
-        (h,    0.0,  "OK"),       # full page
-        (80,   0.20, "OK"),       # 20% trailing
-        (70,   0.30, "WARN"),     # 30% trailing
-        (49,   0.51, "SPARSE"),   # 51% trailing
-        (0,    1.0,  "SPARSE"),   # blank page
+        (0.0,        "OK"),      # full page
+        (warn_pct,   "OK"),      # exactly at warn threshold -> not yet WARN (strict >)
+        (0.30,       "WARN"),    # 30% trailing
+        (sparse_pct, "WARN"),    # exactly at sparse threshold -> still WARN (strict >)
+        (0.51,       "SPARSE"),  # 51% trailing
+        (1.0,        "SPARSE"),  # blank page
     ]
-    for content_rows, expected_empty, expected_bucket in cases:
-        samples = _make_samples(rows_with_content=content_rows, w=w, h=h, n=n)
-        y = _last_content_y(samples, w, h, w * n, n)
-        empty = (h - y) / h if content_rows > 0 else 1.0
-        if empty > 0.50:
-            bucket = "SPARSE"
-        elif empty > 0.25:
-            bucket = "WARN"
-        else:
-            bucket = "OK"
+    for empty, expected_bucket in cases:
+        bucket = _density_bucket(empty, warn_pct, sparse_pct)
         check(
-            f"density threshold rows={content_rows} -> {expected_bucket}",
+            f"_density_bucket empty={empty:.2f} -> {expected_bucket}",
             bucket == expected_bucket,
-            f"empty={empty:.2f} bucket={bucket}",
+            f"got {bucket}",
         )
+
+
+def test_rhythm_issues_rules() -> None:
+    """Drive the three monotony rules in `_rhythm_issues` directly, without
+    rendering a deck. Covers content-run limit, missing divider, and missing
+    density-variation slide, plus the clean case."""
+    max_run, min_deck = 4, 8
+
+    healthy = [
+        "title_slide", "content_slide", "content_slide", "quote_slide",
+        "chapter_slide", "content_slide", "metrics_slide", "closing_slide",
+    ]
+    check("rhythm: balanced deck has no issues",
+          _rhythm_issues(healthy, max_run, min_deck) == [],
+          f"got {_rhythm_issues(healthy, max_run, min_deck)}")
+
+    long_run = ["quote_slide"] + ["content_slide"] * (max_run + 1)
+    issues = _rhythm_issues(long_run, max_run, min_deck)
+    check("rhythm: over-long content run flagged",
+          any("content_slide run" in i for i in issues), f"got {issues}")
+
+    no_divider = ["title_slide"] + ["content_slide", "quote_slide"] * 5
+    issues = _rhythm_issues(no_divider, max_run, min_deck)
+    check("rhythm: large deck without divider flagged",
+          any("no chapter_slide divider" in i for i in issues), f"got {issues}")
+
+    no_variation = ["title_slide", "content_slide", "chapter_slide", "content_slide"]
+    issues = _rhythm_issues(no_variation, max_run, min_deck)
+    check("rhythm: deck without quote/metrics flagged",
+          any("density variation" in i for i in issues), f"got {issues}")
+
+
+def test_orphan_last_line_predicate() -> None:
+    """Drive `_orphan_last_line`: a short trailing line on a multi-line block
+    is an orphan; single-line blocks and long trailing lines are not."""
+    max_words, max_chars = 3, 30
+
+    orphan = "This is a full sentence that wraps\nword"
+    check("orphan: short trailing line detected",
+          _orphan_last_line(orphan, max_words, max_chars) == "word",
+          f"got {_orphan_last_line(orphan, max_words, max_chars)!r}")
+
+    single = "Only one line here"
+    check("orphan: single-line block is not an orphan",
+          _orphan_last_line(single, max_words, max_chars) is None,
+          "single line flagged")
+
+    long_tail = "First line of the block\n" + "x" * (max_chars + 5)
+    check("orphan: long trailing line is not an orphan",
+          _orphan_last_line(long_tail, max_words, max_chars) is None,
+          "long tail flagged")
+
+    many_words = "First line here\none two three four five"
+    check("orphan: wordy trailing line is not an orphan",
+          _orphan_last_line(many_words, max_words, max_chars) is None,
+          "wordy tail flagged")
 
 
 def test_resume_balance_issues() -> None:
