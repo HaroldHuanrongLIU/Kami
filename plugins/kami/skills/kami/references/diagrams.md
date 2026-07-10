@@ -125,7 +125,7 @@ Board text is short, hard, and executable. `writing.md` still applies.
 ### Line discipline
 
 - Orthogonal lines only. No curves, no passing through modules, no crossing text, no decorative junctions.
-- Main path in `--brand`, auxiliary lines in border tone, light open chevron heads (arrow rules in section 4; manual chevrons for PDF output, see production.md).
+- Main path in `--brand`, auxiliary lines in border tone, light open chevron heads (arrow rules in section 5; manual chevrons for PDF output, see production.md).
 - **Connector standoff: 4px.** On a board, start the shaft 4px after the source edge and land the chevron tip 4px before the target edge. Both offsets are computed from the node edge (keep them divisible by 4), so this is a deliberate standoff, not the sloppy floating gap the embedding rules warn about. Welded-on arrows read cramped at board scale.
 - **Never run a line along a module's top edge.** It reads as a broken border or a squashed module, worst when a brand-colored line crosses a light card. Route the line below or beside the module with 16-24px of air, and attach it with a short stub to the outer edge, never into the text area.
 - A relation that is not core information becomes a caption or a small label, not a line.
@@ -151,7 +151,7 @@ Whiteboards explore; boards communicate. Never reuse the whiteboard drawing styl
 
 ### Structure before pixels
 
-Do not draw straight into SVG. Outline the board first with a fixed vocabulary, then render with the section 4 token map, so consecutive boards look like one system:
+Do not draw straight into SVG. Outline the board first with a fixed vocabulary, then render with the section 5 token map, so consecutive boards look like one system:
 
 ```text
 Section: Target architecture
@@ -170,7 +170,7 @@ Content fills the structure; the token map styles it.
 
 ### Board type scale
 
-Standalone board pages run larger than embedded figures (for embedded sizing use the calibration table in section 4):
+Standalone board pages run larger than embedded figures (for embedded sizing use the calibration table in section 5):
 
 | Role | Size |
 |---|---|
@@ -181,6 +181,19 @@ Standalone board pages run larger than embedded figures (for embedded sizing use
 | Caption | 11-12px |
 
 Fixed pixel sizes: no viewport-scaled type, no negative letter-spacing on body sizes. Fonts and colors come from the existing kami stacks and token map; a board introduces zero new colors and zero new fonts.
+
+### Module-level pass
+
+When the macro structure is right but the board still reads crowded, the fault is usually inside modules, not the canvas. Global fixes (enlarge the canvas, shrink type, recolor) do not touch it. Check per module:
+
+- title sitting too close to its description
+- CJK line breaks landing mid-phrase or orphaning one character
+- an icon eating the text column
+- padding thinner than the module's siblings
+- baselines unaligned across one row
+- a table sitting off-center inside its section
+
+Fix modules one at a time, re-render, and only then judge whether the canvas itself needs to change.
 
 ### Board pre-ship scan
 
@@ -204,7 +217,117 @@ File: grep the HTML for `#fff`, `gradient`, `shadow`, `<script`, `<img`, and the
 
 ---
 
-## 4. Embedding in long-doc / portfolio
+## 4. Maintained diagram assets (repo scale)
+
+The third scale. A **figure** embeds in a kami document; a **board** ships as a report page; a **maintained asset** lives in someone's repository (README hero, docs-site figure, `docs/architecture/`) and gets redrawn for months by different hands. Triggers: "给项目画张架构图", "README 配图", "更新这张架构图", or any task that starts from an existing diagram directory.
+
+Everything above still applies (tokens, budgets, line discipline). What changes is lifecycle: the diagram is no longer a one-shot render but a source file with a contract.
+
+### The trio contract
+
+| File | Role | Rules |
+|---|---|---|
+| `index.html` | Source of truth | Self-contained HTML + inline SVG + inline CSS. No external image, script, or font fetch. SVG carries `role="img"`, `<title>`, `<desc>` |
+| Same-name `.png` | What readers see | Re-exported from the HTML after every content change. Never edited directly, never patched to hide a source problem |
+| `prompt.md` | Redraw context | The intent that would otherwise die in a chat log. Missing or stale prompt.md gets rebuilt as part of the task, not skipped |
+
+Deliver all three or say which is missing. A diagram whose latest intent lives only in conversation history will be redrawn wrong next quarter.
+
+### prompt.md: four fixed blocks
+
+| Block | Holds | Never holds |
+|---|---|---|
+| Must preserve | What the current diagram already states correctly | New ideas |
+| Suggested additions | Facts from the sources the diagram does not show yet | Anything phrased as if already drawn |
+| Visual direction | Hierarchy, whitespace, line, and boundary fixes to try next | A full palette dump (tokens live in this file) |
+| Sister boundaries | What belongs to companion diagrams, with their paths | Content that should move back in |
+
+The block separation prevents the two classic redraw failures: treating a suggestion as if it were already drawn, and doing a visual pass that silently grows scope.
+
+### Evidence pass before drawing
+
+Read, in order, before any drawing:
+
+1. `prompt.md`, if present.
+2. `index.html` as it is now.
+3. The current PNG, at real size.
+4. The facts: README, design doc, or the source files that define the objects and boundaries the diagram names. Read only what affects terminology and edges.
+
+Current facts override prompt.md; prompt.md overrides memory; never redraw from memory alone. If the facts contradict the prompt, update the prompt in the same change.
+
+### Reading path before canvas
+
+Decide how the reader's eye moves first; ratio and canvas follow (boards already obey this, section 3):
+
+| Path | Fits | Skeleton |
+|---|---|---|
+| Left to right | Mechanism, request path, task flow | input, decision or merge, output |
+| Top to bottom | Platform overview, runtime architecture | access layer, runtime layer, governance layer |
+| Current to target | Evolution, refactor | today, intervention point, target |
+| Hub with edges | Plugin system, context boundary | center object, input boundary, output boundary |
+
+If the reader has no entry point, no amount of color or radius tuning helps. Fix the path, then the pixels.
+
+### Maturity encoding
+
+Repo diagrams mix what exists, what is being built, and what is only a direction. Encode maturity with stroke and opacity, not new colors:
+
+| State | Encoding | Reads as |
+|---|---|---|
+| Shipped | Standard node (ivory fill, near-black stroke) | Exists today |
+| In build | Focal (brand stroke, `--brand-tint` fill) | The current work, the diagram's point |
+| Future | Dashed `--stone` stroke, node content at 55% opacity | Direction, not commitment |
+
+This collapses two rules into one: the 1-2 focal budget and "what is under construction" are the same slots. Consequences:
+
+- Future nodes never take focal color, and never sit on the main path as if load-bearing.
+- An undecided boundary gets a `TO VERIFY` mono label, not a drawn-through line.
+- No dates, owners, phases, or milestones in an architecture diagram unless the user asked for a board with a governance layer. A diagram radiates certainty; do not let it promise what the roadmap has not decided.
+
+### Naming and copy
+
+Node titles carry function first, protocol noun second. A bare protocol noun outsources the reading cost to the reader:
+
+| Weak | Strong |
+|---|---|
+| Registry | 插件注册表 Registry |
+| Queue | 任务队列 Queue |
+| Policy Hook | 写动作准入 Policy Hook |
+| Inbox | 任务收件箱 Inbox |
+
+In-diagram copy holds objects, boundaries, and actions only; argument stays in prose. CJK copy inside nodes uses short labels with commas, slashes, and semicolons, never the CJK full stop (。). If a line needs a full stop, it is a sentence, and sentences live in the document, not the diagram.
+
+### Terminology sync
+
+The diagram and its host document are one vocabulary. When prose renames an object, the same change updates: SVG `<text>` labels, `<title>` and `<desc>`, `prompt.md`, the re-exported PNG, and any cross-references. A diagram that still shows the old name is a bug, not a style issue.
+
+### PNG export
+
+| Destination | Export |
+|---|---|
+| README, docs site | 2400-3200px wide PNG |
+| Local markdown preview | Same-directory relative path |
+| Social or chat preview | Separate lightweight copy; never overwrite the main PNG |
+
+- Capture the content bounding box (the `.diagram` element or the SVG), not the full page. Add a fixed safe margin of 96-120px, default 112 (keep it divisible by 4).
+- Export from the HTML, headless: `chrome --headless --screenshot` against the element, or `rsvg-convert -w 3200` on an extracted SVG.
+- When export fails or clips, fix the export chain (parse the HTML, confirm the element exists, re-run). Never resize, crop, or hand-edit the PNG to route around a tool problem, and never change diagram content to appease the exporter.
+
+### Acceptance: three surfaces
+
+A repo diagram is not done until all three surfaces pass:
+
+1. **HTML in a browser**: structure, overlap, arrows, whitespace.
+2. **The exported PNG in an image viewer** at 100%: clipping, blank bands, HTML-to-PNG drift.
+3. **The published context**: the image fills the prose column, sits at the right heading level, and is not half-width or double-margined in the README or docs site.
+
+Mechanical scan before handoff, same spirit as the board pre-ship scan: grep the HTML for `#fff`, `gradient`, `shadow`, `<script`, `<img`, and the em dash character; every hex exists in the token map; the type floor holds (the caption tier is the smallest type on the page, nothing below it); the PNG is fresher than the HTML; `prompt.md` reflects what was just drawn.
+
+Crowding is solved by cutting content, banding peers, or splitting out a sister diagram, never by adding a smaller type tier or shrinking the export.
+
+---
+
+## 5. Embedding in long-doc / portfolio
 
 ### Standalone preview
 
@@ -319,7 +442,7 @@ Two spaces between `FIGURE` and the number. With `letter-spacing: 3`, a single s
 
 ---
 
-## 5. Icon style
+## 6. Icon style
 
 Icons live inside `<svg>` blocks alongside diagram nodes. Draw them with the same primitives (`rect`, `circle`, `line`, `path`) used for nodes - no imported icon fonts, no SVG sprites.
 
@@ -354,7 +477,7 @@ When in doubt, omit the icon entirely. A clean text label beats a cute icon in e
 
 ---
 
-## 6. AI-slop anti-patterns
+## 7. AI-slop anti-patterns
 
 Scan for these when drawing or reviewing:
 
@@ -384,10 +507,18 @@ Scan for these when drawing or reviewing:
 | Paragraph inside a node | Node = optional icon + title + 2-3 short lines. Prose goes to a bottom note or companion doc |
 | Full-sentence English translation on a CN board | English is a scan anchor (`CONTROL PLANE`, `OWNER MAP`), not a second copy of the text |
 | Every fact drawn as its own small card | Peers share one band with vertical dividers; tabular facts get a table shell (section 3, Bands over cards) |
+| Roadmap furniture (30/60/90, owner map, milestones) in an architecture diagram | That is a plan, not an architecture. Objects, relations, boundaries, intervention points only; schedule belongs to a timeline or a board's governance layer, and only when asked |
+| Future capability drawn at the same weight as shipped | The reader assumes it exists. Encode maturity: shipped solid, in-build focal, future dashed at reduced opacity (section 4, Maturity encoding) |
+| PNG edited or resized instead of re-exported from the HTML | The trio breaks silently; the next redraw starts from a lie. Fix the HTML or the export chain, then re-export (section 4) |
+| HTML previewed, exported PNG never opened | Export clipping, blank bands, and scale bugs live only on the PNG surface (section 4, Acceptance) |
+| Prose renamed an object, diagram still shows the old name | One vocabulary. Rename SVG text, `<title>`/`<desc>`, prompt.md, and re-export the PNG in the same change |
+| Bare protocol noun as a node title (Registry, Queue, Inbox) | Function first, protocol second: 插件注册表 Registry (section 4, Naming and copy) |
+| CJK full stop (。) inside node copy | Node copy is labels, not sentences. Commas, slashes, semicolons |
+| Crowded board "fixed" by global scaling | The fault is module-level: padding, line breaks, baselines (section 3, Module-level pass) |
 
 ---
 
-## 7. Common pairings
+## 8. Common pairings
 
 ### Technical white paper
 - Architecture (system overview) + built-in timeline (from long-doc)
@@ -410,7 +541,7 @@ Scan for these when drawing or reviewing:
 
 ---
 
-## 8. Data charts (bar / line / donut)
+## 9. Data charts (bar / line / donut)
 
 Five data-driven chart types for investment reports, financial comparisons, and market-share breakdowns. Like the first three diagram types, all are self-contained HTML + inline SVG, embeddable in any kami document.
 
@@ -482,7 +613,7 @@ Connector: dashed 0.8px #b8b7b0 between adjacent bar edges
 
 ---
 
-## 9. Build / preview
+## 10. Build / preview
 
 ```bash
 python3 scripts/build.py diagram-architecture
@@ -511,6 +642,6 @@ Every diagram template carries a poster-size `@page` sized to its own frame and 
 
 ---
 
-## 10. Credit
+## 11. Credit
 
 This capability is inspired by Cathryn Lavery's [diagram-design](https://github.com/cathrynlavery/diagram-design) (a Claude Code skill with 13 editorial diagram types). kami borrowed the **approach** (inline SVG, semantic tokens, complexity budget, anti-slop table). Not the full catalog.
