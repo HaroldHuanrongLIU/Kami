@@ -21,21 +21,10 @@ from shared import (
     GENERIC_AGENT_INSTALL_COMMAND,
     PUBLIC_DOCUMENT_TEMPLATE_KINDS,
     ROOT,
+    kami_version,
     public_document_template_count,
     public_document_template_kinds,
 )
-
-FULL_PUBLIC_FACT_FILES = (
-    "README.md",
-    "llms.txt",
-    "index.html",
-    "index-zh.html",
-    "index-ja.html",
-    "index-ko.html",
-    "index-tw.html",
-)
-REDIRECT_SITE_FILE = "index-en.html"
-SITE_SURFACE_ABSENT = "__site_surface_absent__"
 
 # Locale pages are hand-maintained forks of index.html. Their DOM skeletons
 # must stay identical; the only allowed divergence is the language-redirect
@@ -48,29 +37,48 @@ SITE_LOCALE_PAGES = (
     "index-tw.html",
 )
 
+# Every surface that must carry the full public fact set. Derived from the
+# locale-page tuple so adding a locale automatically joins both checks.
+FULL_PUBLIC_FACT_FILES = (
+    "README.md",
+    "llms.txt",
+    SITE_BASE_PAGE,
+    *SITE_LOCALE_PAGES,
+)
+REDIRECT_SITE_FILE = "index-en.html"
+SITE_SURFACE_ABSENT = "__site_surface_absent__"
+
 _SKELETON_TAGS = frozenset({
     "article", "aside", "dl", "figure", "footer", "form", "header",
     "h1", "h2", "h3", "h4", "h5", "h6",
     "main", "nav", "ol", "section", "script", "svg", "table", "ul",
 })
 
-_TEMPLATE_COUNT_PATTERNS = (
-    r"\b8 document template",
-    r"\bEight document template",
-    r"八种文档模板",
-    r"八種文件範本",
-    r"8種類のドキュメントテンプレート",
-    r"8가지 문서 템플릿",
-)
+# Spelled-out numerals per template count. Digit patterns below are derived
+# from the live registry count, so a registry change keeps the check honest;
+# only the localized number words need a new entry here when the count moves.
+_TEMPLATE_COUNT_WORDS = {
+    8: (
+        r"\bEight document template",
+        r"八种文档模板",
+        r"八種文件範本",
+    ),
+}
 
 def _normalize(text: str) -> str:
     return html.unescape(text)
 
 
 def _contains_template_count(text: str, expected: int) -> bool:
-    if expected != 8:
-        return False
-    return any(re.search(pattern, text, re.IGNORECASE) for pattern in _TEMPLATE_COUNT_PATTERNS)
+    patterns = [
+        rf"\b{expected} document template",
+        rf"{expected}种文档模板",
+        rf"{expected}種文件範本",
+        rf"{expected}種類のドキュメントテンプレート",
+        rf"{expected}가지 문서 템플릿",
+        *_TEMPLATE_COUNT_WORDS.get(expected, ()),
+    ]
+    return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
 
 
 def _contains_diagram_count(text: str, expected: int) -> bool:
@@ -215,6 +223,12 @@ def site_fact_issues(files: Mapping[str, str] | None = None) -> list[str]:
         if rel != "llms.txt" and CLAUDE_DESKTOP_PACKAGE_URL not in text:
             issues.append(f"{rel}: missing Claude Desktop package URL {CLAUDE_DESKTOP_PACKAGE_URL}")
 
+        # The site pages carry a hand-written Kami version badge; tie it to the
+        # tracked VERSION file so a release bump cannot leave a page behind.
+        # README and llms.txt intentionally carry no version string.
+        if rel.endswith(".html") and f"v{kami_version()}" not in text:
+            issues.append(f"{rel}: missing Kami version badge v{kami_version()}")
+
         if not _contains_template_count(text, template_count):
             issues.append(f"{rel}: missing public document template count {template_count}")
         if not _contains_diagram_count(text, diagram_count):
@@ -247,7 +261,7 @@ def check_site_facts(verbose: bool = False) -> int:
         scanned = len(FULL_PUBLIC_FACT_FILES) + 1
         print(f"OK: public site facts in sync across {scanned} file(s)")
     else:
-        print(f"\n[site-fact-drift] {len(issues)}")
+        print(f"\nERROR: [site-fact-drift] {len(issues)}")
         for issue in issues:
             print(f"  {issue}")
         if verbose:
@@ -258,7 +272,7 @@ def check_site_facts(verbose: bool = False) -> int:
     if not structure_issues:
         print(f"OK: locale page structure matches {SITE_BASE_PAGE} across {len(SITE_LOCALE_PAGES)} page(s)")
     else:
-        print(f"\n[site-structure-drift] {len(structure_issues)}")
+        print(f"\nERROR: [site-structure-drift] {len(structure_issues)}")
         for issue in structure_issues:
             print(f"  {issue}")
         if verbose:

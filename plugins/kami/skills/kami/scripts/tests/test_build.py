@@ -467,6 +467,10 @@ def test_korean_templates_carry_resolvable_serif_name() -> None:
     offenders: list[str] = []
     ko_sources = [spec.source for name, spec in HTML_TEMPLATES.items() if name.endswith("-ko")]
     ko_sources += [source for name, source in SCREEN_TEMPLATES.items() if name.endswith("-ko")]
+    # Guard against vacuous green: with zero -ko templates the offender loop
+    # never runs and the check below would pass while enforcing nothing.
+    check("Korean template set is non-empty", bool(ko_sources),
+          "no -ko templates found in the registries")
     for source in ko_sources:
         text = (TEMPLATES / source).read_text(encoding="utf-8")
         for bad in _ko_stack_offenders(text):
@@ -475,6 +479,54 @@ def test_korean_templates_carry_resolvable_serif_name() -> None:
     check("Korean fallback stacks all carry Source Han Serif KR",
           not offenders,
           f"offenders: {'; '.join(offenders)}")
+
+
+# ---------- sibling placeholder parity (issue #38 class) ----------
+
+# Repeated template structures whose placeholder hints must repeat the first
+# block verbatim. Hint richness degrading from block 1 to later siblings makes
+# fillers (human or agent) produce degraded copy; see issue #38. Cycle length N
+# means placeholders repeat in groups of N (e.g. Role/Actions/Impact rows).
+_SIBLING_PARITY_SPECS = (
+    ("resume*.html", r'class="proj-text">(\{\{.*?\}\})', 3),
+    ("resume*.html", r'class="proj-role">(\{\{.*?\}\})', 1),
+    ("resume*.html", r'class="conv-body">\s*(\{\{.*?\}\})', 1),
+    ("resume*.html", r'class="os-desc">(\{\{.*?\}\})', 1),
+    ("resume*.html", r'class="art-stats">(\{\{.*?\}\})', 1),
+    ("portfolio*.html", r'class="project-block">\s*<h3>[^<]*</h3>\s*<p>(\{\{.*?\}\})</p>', 3),
+    ("portfolio*.html", r'class="project-type">(\{\{.*?\}\})', 1),
+    ("portfolio*.html", r'class="project-date">(\{\{.*?\}\})', 1),
+    ("one-pager*.html", r'<li>(\{\{(?:短 bullet|Short bullet|짧은 bullet).*?\}\})</li>', 3),
+    ("long-doc*.html", r'(\{\{(?:一段论述|A paragraph|한 단락 논술).*?\}\})', 1),
+)
+
+
+def test_sibling_placeholder_hints_stay_in_parity() -> None:
+    """Same-structure sibling blocks must carry identical placeholder hints."""
+    matched = 0
+    offenders: list[str] = []
+    for glob_pattern, regex, cycle in _SIBLING_PARITY_SPECS:
+        rx = re.compile(regex, re.DOTALL)
+        for path in sorted(TEMPLATES.glob(glob_pattern)):
+            hits = rx.findall(path.read_text(encoding="utf-8"))
+            if not hits:
+                offenders.append(f"{path.name}: no match for {regex[:40]!r} (stale spec?)")
+                continue
+            matched += 1
+            if len(hits) % cycle != 0:
+                offenders.append(f"{path.name}: {len(hits)} hint(s) not divisible by cycle {cycle}")
+                continue
+            first = hits[:cycle]
+            for start in range(cycle, len(hits), cycle):
+                block = hits[start:start + cycle]
+                if block != first:
+                    offenders.append(
+                        f"{path.name}: block {start // cycle + 1} diverges from block 1: "
+                        f"{block} != {first}")
+    check("sibling parity specs matched across template families", matched >= 30,
+          f"only {matched} template/spec matches; spec table may be stale")
+    check("repeated blocks carry identical placeholder hints", not offenders,
+          "; ".join(offenders[:6]))
 
 
 def test_font_fallback_markers_recognize_pt_serif() -> None:
@@ -912,8 +964,10 @@ def test_pair_names_includes_known_pairs() -> None:
 def test_pair_names_includes_ko_variants_when_present() -> None:
     """`_pair_names` must yield (base, base-ko) pairs in addition to (base, base-en)."""
     captured = list(_pair_names())
-    # Sanity: existing CN/EN pairs still detected.
+    # Sanity: existing CN/EN and CN/KO pairs still detected, so the sweep
+    # below cannot pass vacuously on an empty or EN-only pair list.
     check("CN/EN pair still detected", ("one-pager", "one-pager-en") in captured)
+    check("CN/KO pair still detected", ("one-pager", "one-pager-ko") in captured)
     # Any base whose `-ko` sibling is registered must appear as a (base, base-ko) pair.
     bases = {base for base, _ in captured}
     seen = set(HTML_TEMPLATES) | set(SCREEN_TEMPLATES)

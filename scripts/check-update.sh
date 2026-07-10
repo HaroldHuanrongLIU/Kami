@@ -29,21 +29,27 @@ case "${root}" in
     ;;
 esac
 
-# Throttle: at most one check per calendar day, regardless of outcome.
+# Throttle: at most one check per calendar day, regardless of outcome. One
+# dated marker file rewritten in place, so the cache dir does not accumulate
+# a new empty update-checked-YYYY-MM-DD file every day.
 day="$(date +%F 2>/dev/null)" || exit 0
 cache_dir="${XDG_CACHE_HOME:-${HOME}/.cache}/${SKILL}"
-marker="${cache_dir}/update-checked-${day}"
-[ -f "${marker}" ] && exit 0
+marker="${cache_dir}/update-checked"
+[ "$(cat "${marker}" 2>/dev/null)" = "${day}" ] && exit 0
 mkdir -p "${cache_dir}" 2>/dev/null
-: > "${marker}" 2>/dev/null   # write first so an offline run does not retry all day
+printf '%s' "${day}" > "${marker}" 2>/dev/null   # write first so an offline run does not retry all day
+rm -f "${cache_dir}"/update-checked-2* 2>/dev/null   # sweep legacy per-day markers
 
 command -v curl >/dev/null 2>&1 || exit 0
 remote_ver="$(curl -fsSL --max-time 3 "${REMOTE_URL}" 2>/dev/null | tr -d '[:space:]')"
 [ -n "${remote_ver}" ] || exit 0
 [ "${remote_ver}" = "${local_ver}" ] && exit 0
 
-# Only notify when the remote version sorts strictly higher.
-highest="$(printf '%s\n%s\n' "${local_ver}" "${remote_ver}" | sort -V 2>/dev/null | tail -1)"
+# Only notify when the remote version sorts strictly higher. Numeric-field
+# sort instead of `sort -V`: on a sort without -V support the old pipeline
+# yielded an empty string and silently never notified again.
+highest="$(printf '%s\n%s\n' "${local_ver}" "${remote_ver}" | sort -t. -k1,1n -k2,2n -k3,3n 2>/dev/null | tail -1)"
+[ -n "${highest}" ] || exit 0
 [ "${highest}" = "${remote_ver}" ] || exit 0
 
 echo "Kami ${remote_ver} is available (you have ${local_ver}). Update: ${UPDATE_CMD}"

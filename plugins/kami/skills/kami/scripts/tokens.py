@@ -10,10 +10,23 @@ import json
 import re
 from pathlib import Path
 
-from shared import DIAGRAMS, ROOT, TEMPLATES, TOKENS_FILE
+from shared import ROOT, TEMPLATES, TOKENS_FILE, iter_template_files
 
 ROOT_BLOCK = re.compile(r":root\s*\{([^}]*)\}", re.DOTALL)
 CSS_VAR = re.compile(r"--([\w-]+)\s*:\s*([^;]+);")
+
+
+def parse_root_vars(text: str) -> dict[str, str]:
+    """Return {'--name': value} merged across every `:root { ... }` block.
+
+    Scanning all blocks (not just the first) keeps a future dark-mode or print
+    override inside a second `:root` from silently escaping the drift checks.
+    """
+    found: dict[str, str] = {}
+    for block in ROOT_BLOCK.finditer(text):
+        for m in CSS_VAR.finditer(block.group(1)):
+            found[f"--{m.group(1)}"] = m.group(2).strip()
+    return found
 PY_RGB = re.compile(
     r"^([A-Z][A-Z_]+)\s*=\s*RGBColor\(\s*0x([0-9a-fA-F]{2})\s*,"
     r"\s*0x([0-9a-fA-F]{2})\s*,\s*0x([0-9a-fA-F]{2})\s*\)",
@@ -75,40 +88,32 @@ def _mermaid_theme_drift(canonical: dict[str, str]) -> list[str]:
 def sync_check(verbose: bool = False) -> int:
     if not TOKENS_FILE.exists():
         print(f"ERROR: tokens.json not found at {TOKENS_FILE.relative_to(ROOT)}")
-        return 1
+        return 2
 
     try:
         canonical: dict[str, str] = json.loads(TOKENS_FILE.read_text())
     except json.JSONDecodeError as exc:
         print(f"ERROR: tokens.json is malformed: {exc}")
-        return 1
+        return 2
 
-    targets: list[Path] = list(TEMPLATES.glob("*.html"))
-    if DIAGRAMS.exists():
-        targets.extend(DIAGRAMS.glob("*.html"))
-    marp_dir = TEMPLATES / "marp"
-    if marp_dir.exists():
-        targets.extend(marp_dir.glob("*.css"))
+    targets = iter_template_files(include_diagrams=True, include_marp_css=True)
     py_targets: list[Path] = list(TEMPLATES.glob("*.py"))
+    if not targets and not py_targets:
+        print("ERROR: no templates found to token-check (bad checkout?)")
+        return 2
 
     drift: list[tuple[str, str, str, str]] = []  # (file, token, expected, actual)
 
-    for path in sorted(targets):
+    for path in targets:
         text = path.read_text(encoding="utf-8", errors="replace")
-        block_match = ROOT_BLOCK.search(text)
-        if not block_match:
+        found = parse_root_vars(text)
+        if not found:
             if verbose:
                 print(f"  (skip {path.name}: no :root block)")
             continue
-        root_block = block_match.group(1)
-        found: dict[str, str] = {
-            m.group(1): m.group(2).strip()
-            for m in CSS_VAR.finditer(root_block)
-        }
         rel = path.relative_to(ROOT)
         for token, expected in canonical.items():
-            name = token.lstrip("-")
-            actual = found.get(name)
+            actual = found.get(token)
             # Only flag if the template defines the token but with a wrong value.
             # Templates that don't use a token don't need to define it.
             if actual is not None and actual.lower() != expected.lower():
@@ -137,11 +142,11 @@ def sync_check(verbose: bool = False) -> int:
         return 0
 
     if drift:
-        print(f"\n[token-drift] {len(drift)}")
+        print(f"\nERROR: [token-drift] {len(drift)}")
         for file, token, expected, actual in drift:
             print(f"  {file}: {token} expected {expected}, got {actual}")
     if theme_drift:
-        print(f"\n[mermaid-theme-drift] {len(theme_drift)}")
+        print(f"\nERROR: [mermaid-theme-drift] {len(theme_drift)}")
         for issue in theme_drift:
             print(f"  {issue}")
 

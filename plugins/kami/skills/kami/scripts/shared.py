@@ -202,6 +202,46 @@ def public_document_template_count() -> int:
     return len(public_document_template_kinds())
 
 
+def rel_to_root(path: Path) -> Path:
+    """Return `path` relative to ROOT when possible, else the path unchanged."""
+    return path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+
+
+def default_example_pdfs() -> list[str]:
+    """Return every rendered example PDF, the default scan set for PDF checks."""
+    return [str(p) for p in sorted(EXAMPLES.glob("*.pdf"))]
+
+
+def iter_template_files(
+    *,
+    include_py: bool = False,
+    include_diagrams: bool = False,
+    include_marp_css: bool = False,
+) -> list[Path]:
+    """Collect template-family files for scanning.
+
+    One shared walker so lint, token-sync, and future checks cannot silently
+    diverge in coverage (a divergence is how the Marp CSS family once slipped
+    out of the lint scan while staying in the token scan).
+    """
+    targets: list[Path] = list(TEMPLATES.glob("*.html"))
+    if include_py:
+        targets.extend(TEMPLATES.glob("*.py"))
+    if include_diagrams and DIAGRAMS.exists():
+        targets.extend(DIAGRAMS.glob("*.html"))
+    if include_marp_css:
+        marp_dir = TEMPLATES / "marp"
+        if marp_dir.exists():
+            targets.extend(marp_dir.glob("*.css"))
+    return sorted(targets)
+
+
+@functools.lru_cache(maxsize=1)
+def kami_version() -> str:
+    """Return the canonical Kami version from the tracked VERSION file."""
+    return (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+
+
 @functools.lru_cache(maxsize=1)
 def load_tokens() -> dict[str, str]:
     return json.loads(TOKENS_FILE.read_text(encoding="utf-8"))

@@ -362,31 +362,20 @@ def main(argv: list[str]) -> int:
             return _error_unexpected(args[1])
         target = args[1] if len(args) > 1 else None
         return _verify_all(target)
-    if args[0] == "--check-orphans":
+    # Path-taking check subcommands share one guard + dispatch table.
+    path_checks = {
+        "--check-orphans": check_orphans,
+        "--check-density": check_density,
+        "--check-resume-balance": check_resume_balance,
+        "--check-placeholders": check_placeholders,
+        "--check-markdown": check_markdown_residue,
+    }
+    handler = path_checks.get(args[0])
+    if handler is not None:
         unexpected = _unexpected_arg(args[1:])
         if unexpected:
             return _error_unexpected(unexpected)
-        return check_orphans(args[1:])
-    if args[0] == "--check-density":
-        unexpected = _unexpected_arg(args[1:])
-        if unexpected:
-            return _error_unexpected(unexpected)
-        return check_density(args[1:])
-    if args[0] == "--check-resume-balance":
-        unexpected = _unexpected_arg(args[1:])
-        if unexpected:
-            return _error_unexpected(unexpected)
-        return check_resume_balance(args[1:])
-    if args[0] == "--check-placeholders":
-        unexpected = _unexpected_arg(args[1:])
-        if unexpected:
-            return _error_unexpected(unexpected)
-        return check_placeholders(args[1:])
-    if args[0] == "--check-markdown":
-        unexpected = _unexpected_arg(args[1:])
-        if unexpected:
-            return _error_unexpected(unexpected)
-        return check_markdown_residue(args[1:])
+        return handler(args[1:])
     if args[0] == "--check-rhythm":
         unexpected = _unexpected_arg(args[1:])
         if unexpected:

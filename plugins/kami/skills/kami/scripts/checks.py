@@ -18,7 +18,13 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from optional_deps import MissingDepError, require_pymupdf, require_pypdf_reader
-from shared import EXAMPLES, PARCHMENT_RGB, ROOT, load_checks_thresholds
+from shared import (
+    PARCHMENT_RGB,
+    ROOT,
+    default_example_pdfs,
+    load_checks_thresholds,
+    rel_to_root,
+)
 
 PLACEHOLDER = re.compile(r"\{\{[^}]+\}\}")
 MARKDOWN_THEMATIC_BREAK = re.compile(r"^\s*[-*_]{3,}\s*$")
@@ -49,7 +55,7 @@ def check_placeholders(paths: list[str]) -> int:
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
         hits = list(dict.fromkeys(PLACEHOLDER.findall(text)))
-        rel = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+        rel = rel_to_root(path)
         if hits:
             print(f"ERROR: {rel}: unfilled placeholder(s): {', '.join(hits)}")
             failures += 1
@@ -130,8 +136,7 @@ def check_markdown_residue(paths: list[str]) -> int:
     and inline-code backticks leaking into the final PDF.
     """
     if not paths:
-        if EXAMPLES.exists():
-            paths = [str(p) for p in sorted(EXAMPLES.glob("*.pdf"))]
+        paths = default_example_pdfs()
         if not paths:
             print("ERROR: no files to scan")
             return 2
@@ -142,7 +147,7 @@ def check_markdown_residue(paths: list[str]) -> int:
         path = Path(raw)
         if not path.is_absolute():
             path = ROOT / path
-        rel = path.relative_to(ROOT) if path.exists() and path.is_relative_to(ROOT) else path
+        rel = rel_to_root(path)
         if not path.exists():
             print(f"ERROR: {raw}: file not found")
             failures += 1
@@ -199,8 +204,7 @@ def check_orphans(paths: list[str]) -> int:
         return 2
 
     if not paths:
-        if EXAMPLES.exists():
-            paths = [str(p) for p in sorted(EXAMPLES.glob("*.pdf"))]
+        paths = default_example_pdfs()
         if not paths:
             print("ERROR: no PDF files to scan")
             return 2
@@ -225,7 +229,7 @@ def check_orphans(paths: list[str]) -> int:
             missing += 1
             continue
         scanned += 1
-        rel = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+        rel = rel_to_root(path)
         for page_num in range(len(doc)):
             page = doc[page_num]
             blocks = page.get_text("blocks")
@@ -340,7 +344,7 @@ def _scan_density(paths: list[str]) -> tuple[int, int, int, int] | None:
             missing += 1
             continue
         scanned += 1
-        rel = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+        rel = rel_to_root(path)
         for page_num in range(len(doc)):
             if page_num == 0:
                 continue
@@ -367,8 +371,7 @@ def check_density(paths: list[str]) -> int:
     """Scan PDF pages for sparse content (large trailing whitespace from
     break-inside:avoid pushing content to the next page)."""
     if not paths:
-        if EXAMPLES.exists():
-            paths = [str(p) for p in sorted(EXAMPLES.glob("*.pdf"))]
+        paths = default_example_pdfs()
         if not paths:
             print("ERROR: no PDF files to scan")
             return 2
@@ -453,6 +456,15 @@ def check_resume_balance(paths: list[str]) -> int:
         print("ERROR: provide at least one filled resume PDF to scan")
         return 2
 
+    # Resolve the dependency once up front so a missing PyMuPDF stays a
+    # tooling error (exit 2) while a single unreadable PDF inside the loop
+    # tallies as missing and lets the remaining files still get scanned.
+    try:
+        require_pymupdf()
+    except MissingDepError as exc:
+        print(f"ERROR: {exc}")
+        return 2
+
     cfg = load_checks_thresholds()["resume_balance"]
     min_fill = float(cfg["min_fill_pct"])
     max_fill = float(cfg["max_fill_pct"])
@@ -471,11 +483,12 @@ def check_resume_balance(paths: list[str]) -> int:
 
         result = _resume_page_fills(path, dpi)
         if result is None:
-            return 2
+            missing += 1
+            continue
 
         fills, page_count = result
         scanned += 1
-        rel = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+        rel = rel_to_root(path)
         fill_text = " / ".join(f"{fill:.0%}" for fill in fills)
         issues = _resume_balance_issues(fills, page_count, min_fill, max_fill, max_gap)
         if issues:
@@ -585,8 +598,10 @@ def check_rhythm(targets: list[str], pptx_targets: dict[str, str], templates_dir
         issues = _rhythm_issues(seq, max_content_run, divider_min_deck_size)
 
         if issues:
+            # These fail the run (exit 1), so label them ERROR; WARN is
+            # reserved for advisory output that does not gate the build.
             for issue in issues:
-                print(f"WARN: {name}: {issue}")
+                print(f"ERROR: {name}: {issue}")
             failures += 1
         else:
             content_run = 0
