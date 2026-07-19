@@ -27,6 +27,11 @@ Kami is a layout design system for the AI era. Give Claude (or any LLM) a brief,
 - 8 document template types: One-pager, Letter, Resume, Long document, Portfolio, Slides, Equity report, Changelog
 - 18 diagram types: architecture, architecture board, flowchart, quadrant, bar chart, line chart, donut chart, state machine, timeline, swimlane, tree, layer stack, venn, candlestick, waterfall, sequence, class, ER
 
+## Agent Interfaces
+- Content contracts: `references/schemas/<type>.json` carries the per-type structure and quality bar; validate before layout and check coverage after filling with `python3 scripts/build.py --check-content content.json [filled.html]`
+- Deterministic checks: placeholders, markdown residue, page density, orphan lines, slide rhythm, and a perceptual pass that exports page images with a fixed review checklist (`--check-visual`)
+- MCP server: `python3 scripts/mcp_server.py` speaks MCP over stdio with tools kami_templates / kami_render / kami_check / kami_screenshot, so agents can render and verify without loading the skill prompt
+
 ## Links
 - GitHub: https://github.com/tw93
 - Blog: https://tw93.fun

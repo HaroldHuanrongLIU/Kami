@@ -15,6 +15,9 @@ python3 scripts/build.py                   # 构建所有目标
 python3 scripts/build.py --check           # 快速校验
 python3 scripts/build.py --verify          # 完整验证
 python3 scripts/build.py --check-markdown path/to/filled.pdf  # 检查 Markdown 标记残留
+python3 scripts/build.py --check-content content.json filled.html  # 内容 IR 校验 + 落稿覆盖检查
+python3 scripts/build.py --check-visual path/to/filled.pdf   # 逐页出 PNG + 感知审查清单
+python3 scripts/mcp_server.py              # MCP stdio server：外部 agent 的 render / check / screenshot 入口
 python3 scripts/build_metadata.py --check  # Claude/Codex 插件镜像和 marketplace 漂移检查
 python3 scripts/tests/test_build.py        # 测试套件
 bash scripts/ensure-fonts.sh               # 字体恢复（缺字体或字体被截断时）
@@ -29,9 +32,9 @@ python3 scripts/mermaid_normalize.py raw.svg -o clean.svg  # beautiful-mermaid S
 - 改 style 时同步更新 `references/design.md` 和模板 tokens，不要只改单点。
 - 加新模板：从最近的模板复制，对齐 `references/design.md`，加 demo 覆盖。
 - 不要在 docs / template 注释 / 脚本输出里用图形 emoji。脚本状态用 `OK:` / `ERROR:`。
-- 仓库 docs(`README.md`、`index*.html`、`llms.txt`、`AGENTS.md`、`CLAUDE.md` 等)和模板生成产物禁止 em dash(`—`,U+2014),用冒号 / 逗号 / 句号 / 括号代替。生成文档侧另见 `references/anti-patterns.md` #27。自检:`grep -rn '—' README.md llms.txt index*.html`(`references/anti-patterns.md` 内是教学反例,豁免)。
+- 仓库 docs(`README.md`、`index*.html`、`llms.txt`、`AGENTS.md`、`CLAUDE.md` 等)和模板生成产物禁止 em dash(U+2014),用冒号 / 逗号 / 句号 / 括号代替。生成文档侧另见 `references/anti-patterns.md` #27。自检:`grep -rn "$(printf '\342\200\224')" README.md llms.txt index*.html`(`references/anti-patterns.md` 内是教学反例,豁免)。
 - 模板**内联** CSS，不抽公共 partial。修 CSS 漂移时跨模板同步改，不要引入 build-time include。
-- 所有模板注册表都在 `scripts/shared.py`(`HTML_TEMPLATES` 文档 / `SCREEN_TEMPLATES` 浏览器 / `DIAGRAM_TEMPLATES` 图),build.py 从中派生。加删模板或图改这一处,不要分别改 build.py。
+- 所有模板注册表都在 `scripts/shared.py`(`HTML_TEMPLATES` 文档 / `SCREEN_TEMPLATES` 浏览器 / `PPTX_TEMPLATES` 可编辑 deck / `DIAGRAM_TEMPLATES` 图),build.py 从中派生。加删模板或图改这一处,不要分别改 build.py。渲染管线单一入口在 `scripts/render.py`,build / verify / MCP 三方共用,不要在别处复制 WeasyPrint 调用。
 - 不打包大体积商业字体到 `dist/kami.zip`，但模板要保留稳定的本机预览路径；ZIP 内必须是顶层 `kami/` skill 文件夹。
 - `dist/kami.zip` 是 tracked release 制品。小修通常刷 latest release 资源即可，不必新 tag。
 - 改 build / packaging 相关代码后，刷新并检查 `dist/kami.zip`；新增 helper/module/reference JSON 后，确认文件已被 Git 跟踪并进入 package。

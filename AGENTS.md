@@ -18,7 +18,8 @@ Kami is a document-generation skill and template system. It ships editorial HTML
 - `references/mermaid.md` - Mermaid diagram support: the two render paths (PDF vs browser) and the authoring pipeline.
 - `references/mermaid-theme.json` - canonical Kami↔beautiful-mermaid color/font theme (kept in sync with `tokens.json`).
 - `references/tokens.json` - canonical color tokens (drift-checked by `scripts/tokens.py`).
-- `references/checks_thresholds.json` - rhythm / density / orphan check thresholds (loaded by `scripts/checks.py`).
+- `references/checks_thresholds.json` - rhythm / density / orphan / visual check thresholds (loaded by `scripts/checks.py` and `scripts/visual.py`).
+- `references/schemas/` - content IR contracts, one JSON Schema subset file per document type; `$comment` fields carry the per-field quality bar distilled from `writing.md`.
 - `references/brand-profile.md` and `references/brand.example.md` - optional brand profile behavior and public example.
 - `.claude-plugin/marketplace.json` - **generated** Claude Code plugin marketplace metadata. Points Claude Code at `plugins/kami`.
 - `.agents/plugins/marketplace.json` - **generated** Codex repo marketplace. Points Codex at `plugins/kami`; never hand-edit.
@@ -34,11 +35,15 @@ Kami is a document-generation skill and template system. It ships editorial HTML
 - `index.html`, `index-zh.html`, `index-en.html`, `index-ja.html`, `index-ko.html`, `index-tw.html` - public site entrypoints.
 - `robots.txt`, `sitemap.xml`, and `vercel.json` - public crawler, deployment, and AI visibility files.
 - `llms.txt` - AI crawler and model-facing project summary.
-- `scripts/build.py` - CLI shell: build targets and dispatch to lint / verify / checks / tokens modules.
+- `scripts/build.py` - CLI shell: build targets and dispatch to render / lint / verify / checks / tokens modules.
+- `scripts/render.py` - shared artifact pipeline: `render_pdf` (highlight + WeasyPrint + Kami PDF metadata + page count), `build_slides`, `infer_author`, `set_pdf_metadata`. The single render path used by build.py, verify.py, and the MCP server.
 - `scripts/verify.py` - end-to-end render verification (page count, embedded fonts, advisory density scan).
 - `scripts/lint.py` - template CSS lint rules and base/variant cross-template `:root` consistency check (CN↔EN and CN↔KO).
 - `scripts/tokens.py` - `tokens.json` drift check across HTML templates and PPTX slide scripts.
 - `scripts/checks.py` - PDF-side checks: placeholders, orphans, density, slide-deck rhythm.
+- `scripts/content.py` - content IR validation (`--check-content`): schema check before layout, plus content-to-HTML coverage after filling.
+- `scripts/visual.py` - perceptual verification (`--check-visual`): rasterizes PDF pages to PNG and prints the fixed review checklist for the eyeball pass.
+- `scripts/mcp_server.py` - zero-dependency MCP stdio server exposing `kami_templates` / `kami_render` / `kami_check` / `kami_screenshot`, so any MCP-capable agent can drive render + verify without reading SKILL.md. Register with `claude mcp add kami -- python3 <checkout>/scripts/mcp_server.py`.
 - `scripts/optional_deps.py` - centralized loader for weasyprint / pypdf / PyMuPDF with consistent install hints.
 - `scripts/shared.py` - shared constants and the canonical `HTML_TEMPLATES` registry used by the build scripts.
 - `scripts/ensure-fonts.sh` - verified font recovery helper (portable across bash 3.2+).
@@ -52,7 +57,7 @@ Kami is a document-generation skill and template system. It ships editorial HTML
 - `.github/workflows/release.yml` - tag-triggered workflow that builds and attaches `dist/kami.zip` to the release.
 - `dist/kami.zip` - tracked release archive.
 
-Reference docs are English-only. Language-specific output differences (CN/EN/KO) belong in templates, not duplicated reference files.
+Reference docs are English-first and never forked per language. Inline CJK examples are allowed where the rule itself is about CJK typography (term annotation, punctuation, spacing); language-specific output differences (CN/EN/KO) belong in templates, not duplicated reference files.
 
 ## Commands
 
@@ -65,6 +70,9 @@ python3 scripts/build.py --check-markdown path/to/filled.pdf
 python3 scripts/build.py --check-orphans path/to/doc.pdf
 python3 scripts/build.py --check-density path/to/doc.pdf
 python3 scripts/build.py --check-rhythm slides slides-en
+python3 scripts/build.py --check-content content.json path/to/filled.html
+python3 scripts/build.py --check-visual path/to/filled.pdf
+python3 scripts/mcp_server.py    # MCP stdio server for external agents (render / check / screenshot)
 python3 scripts/build_metadata.py
 python3 scripts/build_metadata.py --check
 python3 scripts/tests/test_build.py
@@ -78,29 +86,32 @@ bash scripts/package-skill.sh
 ## Working Rules
 
 - Style changes must update `references/design.md` and the matching template tokens.
+- A change that touches template tokens, shared CSS gestures, or `references/design.md` visual rules must rebuild the affected demo outputs (`assets/demos/*.pdf` / `*.png`) in the same change, not as a later cleanup. Demos inline their CSS by copy, so they silently keep the old style otherwise. Report the sweep explicitly: rebuilt N demos, K unaffected. The off-palette guard in `scripts/lint.py` scans `assets/demos/*.html` for stale hexes as a backstop, but it cannot see rendered PDFs or PNGs.
 - Landing or documentation-site work follows `references/design.md` Section 11: «Documentation site» for the doc shell (sidebar rail, on-this-page TOC, borderless prev/next pager, build-time zero-JS code highlighting) and «Responsive screenshot verification» (screenshot at 375px / 1280px per locale, objective line-widow scan) before shipping.
 - For hosted Kami site or public landing changes, first separate generic template work from Kami's own website. Generic behavior lives in `assets/templates/landing-page*` and `references/`; Kami site facts live across `index*.html`, `styles.css`, README, `llms.txt`, `robots.txt`, `sitemap.xml`, and `vercel.json`.
 - Public facts are wider than the hero. Pricing, install path, version, release, support, analytics, FAQ, and positioning claims must move together across pages, metadata, AI files, and download links. Do not leave site-only analytics or tracking changes contradicting "no analytics" or app/package privacy copy.
 - Content changes should avoid CSS churn unless layout behavior is part of the task.
 - For document or template tasks, lock the output contract before editing: language, template, output format, page or length target, visual acceptance check, and verification command.
 - Prefer the nearest existing template and deterministic verifier. Do not add a template, shared CSS layer, dependency, script flag, or optional mode unless the current request cannot be satisfied without it.
-- New templates should copy the nearest existing template, stay aligned with `references/design.md`, and add demo coverage.
+- New templates should copy the nearest existing template, stay aligned with `references/design.md`, and add demo coverage. A new document type also needs a content schema in `references/schemas/` whose `$comment` notes carry the quality bar from `references/writing.md`.
 - Do not use graphic emoticons in docs, template comments, or script output.
-- Do not use em dashes (U+2014) in repository docs, generated documents, template comments, or site copy; use colons, commas, periods, or parentheses instead. Self-check: `grep -rn '—' README.md llms.txt index*.html`. Teaching counter-examples inside `references/anti-patterns.md` are exempt; its rule #27 covers the generated-document side.
+- Do not use em dashes (U+2014) in repository docs, generated documents, template comments, or site copy; use colons, commas, periods, or parentheses instead. Self-check: `grep -rn "$(printf '\342\200\224')" README.md llms.txt index*.html`. Teaching counter-examples inside `references/anti-patterns.md` are exempt; its rule #27 covers the generated-document side.
 - Use `OK:` and `ERROR:` for status text in scripts.
 - Use `scripts/ensure-fonts.sh` to recover required fonts with retry and size validation when local font files are missing or truncated. It downloads to the XDG user font dir (`${XDG_DATA_HOME:-~/.local/share}/fonts/kami`), never into the skill's `assets/fonts`, so an installed Claude Desktop skill stays small; inside a repo checkout it is a no-op because the committed large fonts already satisfy the templates' relative path.
 - Do not bundle large CJK font files into `dist/kami.zip`; package scripts should exclude them while templates keep stable local-preview paths. The skill ZIP uploaded to Claude Desktop must be the `scripts/package-skill.sh` output under the 6MB package ceiling and must contain a top-level `kami/` skill folder; a hand-zipped checkout includes the tracked large fonts and Claude Desktop rejects it.
 - Do not bundle README/public-site-only showcase screenshots into `dist/kami.zip`; keep them under `assets/showcase/` and exclude that directory in `scripts/package-skill.sh`.
 - Keep multilingual public pages, `llms.txt`, `robots.txt`, sitemap, JSON-LD, and FAQ content aligned when changing public positioning or install instructions.
 - Brand profile support is optional context. Keep public examples in `references/`; do not hard-code a maintainer's private local profile content.
+- Demo, reference-example, and handoff content distilled from a maintainer's private documents (resume, business proposal, pricing, client names) must be de-identified before it lands in the repo: swap in public figures, public projects, or invented generic data. Job-search, quote, and engagement-period fields count as sensitive even without names. When such content is distilled, list the identifying signals that were swapped out in the handoff report; do not rely on the maintainer to spot leftovers.
 - Slides default to WeasyPrint HTML-to-PDF templates unless the user explicitly needs editable PPTX output.
 - Templates intentionally inline their CSS rather than share a `_kami.css` partial: each template must remain a single self-contained HTML file so users can copy-paste it without a build step. When fixing CSS drift, apply the same change across affected templates rather than introducing a build-time include.
-- All template registries live in `scripts/shared.py`: `HTML_TEMPLATES` (PDF docs), `SCREEN_TEMPLATES` (browser-only), and `DIAGRAM_TEMPLATES` (assets/diagrams). `build.py` derives its target dicts from them via `build_targets()` / `screen_targets()` / `diagram_targets()`. Update the registry, not the per-script dicts, when adding or removing a template or diagram.
+- All template registries live in `scripts/shared.py`: `HTML_TEMPLATES` (PDF docs), `SCREEN_TEMPLATES` (browser-only), `PPTX_TEMPLATES` (editable deck scripts), and `DIAGRAM_TEMPLATES` (assets/diagrams). `build.py` derives its target dicts from them via `build_targets()` / `screen_targets()` / `pptx_targets()` / `diagram_targets()`. Update the registry, not the per-script dicts, when adding or removing a template or diagram.
+- The render pipeline has one entry: `render.render_pdf` (highlight, WeasyPrint, Kami PDF metadata, page count) and `render.build_slides`. Never duplicate a WeasyPrint call or the metadata stamping in another module; build.py, verify.py, and the MCP server all call render.py.
 - Mermaid diagrams: never embed raw beautiful-mermaid SVG into a PDF-bound template. WeasyPrint cannot resolve `color-mix()`, render `<foreignObject>`, or fetch a runtime web font, so always pipe through `scripts/mermaid_normalize.py` first (`--check` lint enforces this). It is pure Python, no Node bundled. `xychart-beta` is browser-only (it styles via `<style>` class selectors); use the hand-drawn chart diagrams for PDF. Full flow in `references/mermaid.md`.
 
 ## Refactor And Packaging Hard Stops
 
-- When refactoring `scripts/build.py` or package helpers into new modules, confirm every new helper file is tracked by Git. `scripts/package-skill.sh` packages from `git ls-files`, so untracked modules pass local imports but disappear from `dist/kami.zip`.
+- When refactoring `scripts/build.py` or package helpers into new modules, confirm every new helper file is tracked by Git and added to the scripts allowlist in `scripts/package-skill.sh` (its coverage gate fails the package build otherwise). `scripts/package-skill.sh` packages from `git ls-files`, so untracked modules pass local imports but disappear from `dist/kami.zip`.
 - Any source change that adds scripts, templates, reference JSON, workflows, or package inputs must refresh and inspect `dist/kami.zip`; package freshness is part of release readiness, not a later cleanup step.
 - Changes to `SKILL.md`, templates, scripts, references, or package inputs must decide explicitly whether `dist/kami.zip` needs refresh. If the behavior is shipped through the skill package, rebuild and inspect the ZIP before handoff.
 - Marketplace, plugin path, version, or generated mirror changes require runtime installation proof, not metadata proof only. For Claude Code changes, use an isolated `HOME=/tmp/...` smoke with `claude plugin marketplace add <path>`, `claude plugin install kami@kami`, `claude plugin details kami@kami`, and confirm the installed cache is the lightweight `plugins/kami` tree. For Codex changes, use an isolated `CODEX_HOME=/tmp/...` smoke with `codex plugin marketplace add <path>`, `codex plugin add kami@kami`, and `codex plugin list`; keep the generator, mirror tree, package audit, and install path aligned.
@@ -109,7 +120,7 @@ bash scripts/package-skill.sh
 
 ## CI And Verification Discipline
 
-- Tests that need `weasyprint` / `pypdf` / `PyMuPDF` must run in a CI job that installs those deps (currently `verify-render`). The `lint-and-test` job ships only Pygments, so a `find_spec(...) is not None` skip-guard there silently skips the test while still printing `OK:`. A green `lint-and-test` does not mean the solver / render tests ran.
+- Tests that need `weasyprint` / `pypdf` / `PyMuPDF` must run in a CI job that installs those deps (currently `verify-render`). The `lint-and-test` job ships only Pygments, so a `find_spec(...) is not None` skip-guard there silently skips the test while still printing `OK:`. A green `lint-and-test` does not mean the render-dependent tests ran.
 - Edits to `.github/workflows/*.yml` should be validated on a feature branch (push, watch the run go green) before merging to `main`. Local font / dependency / runner assumptions diverge from CI more often than expected: this project has already burned commits on `pip` cache requiring a manifest, the `fallback_present` set missing Ubuntu defaults (DejaVu / Liberation), and CI never having commercial fonts (Charter / TsangerJinKai02).
 - Differences between CI and host behavior are expressed as a single explicit opt-in env var (`KAMI_ALLOW_FALLBACK_ONLY=1` for missing primary fonts). When a third such flag is needed, migrate to `references/verify_profile.json` or a `--ci-mode` CLI flag instead of letting `KAMI_*` env vars sprawl.
 
@@ -117,7 +128,7 @@ bash scripts/package-skill.sh
 
 - WeasyPrint rendering is sensitive to font availability, solid hex tag backgrounds, page breaks, CJK fallback, and synthetic bold. Verify visually for template changes.
 - Slide output has three paths: `slides-weasy*.html` for default PDF decks, `slides*.py` for editable PPTX fallback, and `assets/templates/marp/slides-marp*.{md,css}` for Markdown-first Marp decks.
-- Marp theme CSS (`assets/templates/marp/slides-marp.css` and `-en`) inlines a full copy of the design tokens (`--parchment`, `--brand`, `--serif`, rhythm modules) because Marp themes must be self-contained. `build.py --sync` / `--check` token-sync the `marp/*.css` files and the CSS lint rules scan them too (both walk `shared.iter_template_files`), so token drift and rule violations in the Marp themes are caught, not silent. The remaining gap: the off-palette hex guard scans only editorial `TEMPLATES/*.html`, so off-palette colors in Marp CSS still need eyeball review.
+- Marp theme CSS (`assets/templates/marp/slides-marp.css` and `-en`) inlines a full copy of the design tokens (`--parchment`, `--brand`, `--serif`, rhythm modules) because Marp themes must be self-contained. `build.py --sync` / `--check` token-sync the `marp/*.css` files and the CSS lint rules scan them too (both walk `shared.iter_template_files`), so token drift and rule violations in the Marp themes are caught, not silent. The remaining gap: the off-palette hex guard scans editorial `TEMPLATES/*.html` and `assets/demos/*.html`, but not Marp CSS, so off-palette colors in Marp themes still need eyeball review.
 - AI/public visibility spans `index*.html`, `llms.txt`, `robots.txt`, `sitemap.xml`, FAQ JSON-LD, README install text, diagram counts, and release archive links.
 - `scripts/shared.py` centralizes constants used by the build scripts; keep paths and target names in sync before adding templates or diagrams.
 - `dist/kami.zip` is a tracked release archive. Packaging changes must update and inspect it deliberately.
@@ -135,16 +146,9 @@ bash scripts/package-skill.sh
 
 ## High-Risk Pitfalls
 
-See `references/production.md` Part 4.
-
-1. Tag rgba double rectangle: use solid hex backgrounds.
-2. Thin border plus border-radius double ring: border < 1pt with border-radius can trigger it.
-3. Resume 2-page overflow: tiny font, fallback, line-height, or margin changes can break it.
-4. `break-inside` fails inside flex: wrap content in a block wrapper.
-5. `height: 100vh` is unreliable under `@page`: use explicit mm values.
-6. SVG marker `orient="auto"` does not rotate in WeasyPrint: draw arrowheads manually.
-7. Section body text should not use `max-width`: `.manifesto`, `.section-lede`, and similar text should fill the `.page` container. Exceptions: `.type-sample` and `.footer .colophon`.
-8. Diagram template changes must sync to index showcase SVGs: any visual fix to `assets/diagrams/*.html` must also be applied to the matching mini SVG in `index.html`, `index-zh.html`, `index-ja.html`, `index-ko.html`, `index-tw.html`.
+`references/production.md` Part 4 is the single source of truth for render failures,
+their verified causes, and their fixes. Keep additions and corrections there instead
+of maintaining a shortlist in this file.
 
 ## Demo Screenshots
 
@@ -167,6 +171,10 @@ magick /tmp/sl1.png /tmp/gap.png /tmp/sl2.png -append /tmp/stacked.png
 magick /tmp/stacked.png -gravity Center -background '#f5f4ed' -extent 1241x1754 <target>.png
 ```
 
+Before replacing a tracked PNG, confirm the source PDF uses an intended primary or
+listed fallback font, not DejaVu or Bitstream Vera, and that the captured page has
+representative content with no placeholders or missing assets.
+
 ## Verification Details
 
 - Expected page counts: one-pager 1, letter 1, resume 2 strict, long-doc 7 plus or minus 2, portfolio 6 plus or minus 2, slides 7 plus or minus 3, equity-report 2 to 3, changelog 1 to 2. Landing pages are browser-only HTML with no PDF page count.
@@ -177,10 +185,14 @@ magick /tmp/stacked.png -gravity Center -background '#f5f4ed' -extent 1241x1754 
 
 ## Verification
 
-- Template, CSS, or script changes: run `python3 scripts/build.py --check` (CSS lint + token sync + base/variant cross-template `:root` consistency, currently CN↔EN and CN↔KO) and `python3 scripts/build.py --verify`.
+- Template or CSS changes: run `python3 scripts/build.py --check` (CSS lint + token sync + base/variant cross-template `:root` consistency, currently CN↔EN and CN↔KO) and `python3 scripts/build.py --verify` for the affected targets (full `--verify` when the change is cross-template).
+- Script changes: run `python3 scripts/tests/test_build.py` and `python3 scripts/build.py --check`. Run full `--verify` only when the render pipeline (`render.py`, `verify.py`, WeasyPrint handling) itself changed.
 - Demo changes: regenerate the affected demo outputs and confirm page counts stay in range.
 - Font issues: run `bash scripts/ensure-fonts.sh`, then rebuild the affected target.
 - Markdown-sourced filled documents: run `python3 scripts/build.py --check-markdown path/to/filled.pdf` after rendering, especially when the source had thematic breaks, bold markers, or inline-code backticks.
+- New filled documents built from raw material: validate the content IR first (`python3 scripts/build.py --check-content content.json`), then re-run with the filled HTML to confirm coverage. Schema edits in `references/schemas/` must keep `$comment` quality-bar notes in sync with `references/writing.md`.
+- Filled PDF deliverables: run `python3 scripts/build.py --check-visual path/to/filled.pdf` and view every exported page image against the printed checklist; geometry checks do not cover fonts, overlaps, or break placement.
+- MCP server changes: smoke the stdio protocol end to end (initialize, tools/list, one tools/call per changed tool) via a scripted stdin session; check output stays newline-delimited JSON with no stray prints on stdout.
 - Slide rhythm or deck changes: run `python3 scripts/build.py --check-rhythm slides slides-en` plus the affected render command.
 - Public site or AI visibility changes: check `index*.html`, README, `llms.txt`, `robots.txt`, `sitemap.xml`, JSON-LD, FAQ, install links, and release/download links together. Serve the page and screenshot 375px / 1280px per locale, plus 320px when CTA width or mobile nav changes.
 - Packaging changes: run `bash scripts/package-skill.sh` and confirm `dist/kami.zip` stays small enough for release upload. Inspect `unzip -l dist/kami.zip` for accidental large fonts, showcase screenshots, cache files, or missing new helper files.
@@ -197,6 +209,7 @@ magick /tmp/stacked.png -gravity Center -background '#f5f4ed' -extent 1241x1754 
 
 - Before drafting notes, read the previous published release and treat it as the hard format template: `gh release view $(gh release list -R tw93/Kami --limit 1 --json tagName --jq '.[0].tagName') -R tw93/Kami`. Mirror its exact structure (centered logo block, `### Changelog`, `### 更新日志`, closing tagline blockquote); do not rebuild the shape from memory.
 - For public releases, keep notes concise and bilingual. Use one-to-one English and Chinese changelog items, 5 to 8 items, one sentence each.
+- Each changelog item must render as a single line at GitHub release-page width: roughly 90 characters for English and 45 characters for Chinese, counting the number prefix and bold markers. "One sentence" is not the budget; the rendered line is. After drafting, check the longest item first; if it wraps, cut words rather than splitting the item.
 - Generate the scaffold with `python3 scripts/draft-release-notes.py V<prev>..V<new> --version V<new> --title "<Codename>"`, then regroup the raw commit list into 5 to 8 product-themed bullets and translate each to Chinese. Do not paste raw commit subjects.
 - Match the established shape: title is `V<x.y.z> <Two-Word Codename>` (e.g. `V1.7.2 Cleaner Resumes`), body is the centered logo block + `### Changelog` (English numbered list) + `### 更新日志` (Chinese numbered list) + the closing tagline line.
 
